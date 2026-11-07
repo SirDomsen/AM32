@@ -41,7 +41,13 @@ LIBS := -lnosys
 VERSION_MAJOR := $(shell $(FGREP) "define VERSION_MAJOR" $(MAIN_INC_DIR)/version.h | $(CUT) -d" " -f3 )
 VERSION_MINOR := $(shell $(FGREP) "define VERSION_MINOR" $(MAIN_INC_DIR)/version.h | $(CUT) -d" " -f3 )
 
-FIRMWARE_VERSION := $(VERSION_MAJOR).$(VERSION_MINOR)
+VERSION_PATCH := $(shell $(FGREP) "define VERSION_PATCH" $(MAIN_INC_DIR)/version.h | $(CUT) -d" " -f3 )
+
+ifneq ($(VERSION_PATCH),)
+FIRMWARE_VERSION := $(VERSION_MAJOR).$(VERSION_MINOR)_$(VERSION_PATCH)
+else
+FIRMWARE_VERSION := $(VERSION_MAJOR).$(VERSION_MINOR)$(VER_SUFFIX)
+endif
 
 # Compiler options
 
