@@ -19,7 +19,13 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * **Stufe 8:** 80 % *(Entspricht dem bisherigen Setup mit auf 820 µs gestrecktem Servoweg)*
   * **Stufe 9:** 90 %
   * **Stufe 10:** 100 % (volle Phasenkurzschluss-Bremse)
-* **Linearer Hebelweg:** Der gesamte Bremsweg deiner Fernsteuerung skaliert gleichmäßig von 0 bis zur gewählten Maximalstufe.
+* **Linearer & feinfühliger Hebelweg:** Durch eine progressive Hebelkurve (50 % linear + 50 % quadratisch gemischt) spricht die Bremse im ersten Hebeldrittel butterweich an und greift nach hinten hin kraftvoll zu.
+* **Dynamische Drehzahlkompensation (Speed-Compensated Braking):** 
+  * Wirkt der natürlichen Back-EMF-Überhöhung bei High-Speed entgegen.
+  * Bei Höchstgeschwindigkeit wird die Bremsleistung automatisch auf 50 % gedämpft, um blockierende Räder oder ein ausbrechendes Heck zu verhindern.
+  * Verringert sich die Geschwindigkeit, regelt die Firmware die Bremskraft kontinuierlich bis auf 100 % hoch, um das Auto zuverlässig zum Stillstand zu bringen.
+* **Slew-Rate / Ruckdämpfung:** 
+  * Verhindert abrupte Drehmomentschläge auf das Getriebe durch sanftes Hochrampen der Brems-PWM über ~50 ms.
 
 ### 3. Einstellbare Rückfahrgeschwindigkeit (`Running brake level`)
 * **Steuerung:** Über den Schieberegler **`Running brake level`** (im Code `driving_brake_strength`, Werte 1 bis 10) im Configurator.
