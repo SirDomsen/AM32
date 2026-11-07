@@ -18,11 +18,12 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * **Stufe 5:** 50 %
   * **Stufe 8:** 80 %
   * **Stufe 10:** 100 % (volle Phasenkurzschluss-Bremse `fullBrake()`, absolut identisch zur maximalen Hardware-Bremsleistung des Original-AM32)
-* **Intelligente Highspeed-Snapshot-Dämpfung mit automatischem 400-ms-Blend-In:**
+* **Intelligente Highspeed-Snapshot-Dämpfung mit blitzschnellem 100-ms-Blend-In & Notanker:**
   * **Einsatz:** Im Moment des Tretens auf die Bremse nimmt die Firmware einen Schnappschuss der aktuellen Drehzahl (`average_interval`).
   * **Highspeed (z. B. 50 km/h, < 150 µs):** Dämpft die Bremskraft initial auf 35 %, um die extreme Back-EMF-Spitze und blockierende Hinterräder bei entlasteter Hinterachse komplett zu eliminieren.
   * **Schneckentempo (> 1000 µs):** Volle 100 % Bremskraft ab der ersten Millisekunde.
-  * **1-kHz-Blend-In:** Über ca. 400 ms blendet die Firmware die Dämpfung im 1-kHz-Loop stufenlos auf 100 % hoch. So fängt der Regler den Highspeed-Schlag ab, verzögert dann kontinuierlich und bringt das Auto sicher bei 0 RPM zum Stillstand.
+  * **1-kHz-Blend-In in nur ~100 ms:** Über ca. 100 ms (genau die 2–3 Radumdrehungen des Front-Eintauchens) klettert die Dämpfung stufenlos auf 100 %. So bleibt das Auto stabil, baut aber sofort messerscharfe Verzögerung auf.
+  * **Panik-Notanker ab 85 % Hebelweg:** Zieht man den Bremshebel über 85 % durch, wird jede Dämpfung sofort umgangen $\rightarrow$ 100 % sofortige Vollbremsung!
 * **30 % Progressive Expo-Kennlinie (RC-Sender-Standard für Vorwärts-Bremse):**
   * Verwendet eine kubische Mischung (70 % linear + 30 % kubisch) auf dem Hebelweg nach hinten.
   * **0 bis 40 % Hebelweg:** Extrem feinfühlige Bremswirkung (nur ~14–30 % Kraft). Erlaubt feinstes Anbremsen ohne Heckausbruch auf 2WD-Chassis.

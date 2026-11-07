@@ -1466,8 +1466,13 @@ if (!stepper_sine && armed) {
 
                     // Apply 30% Cubic Expo and snapshot speed scaling ONLY when braking from forward drive!
                     if (forward == (1 - eepromBuffer.dir_reversed)) {
-                        uint32_t cubic_brake = (((uint32_t)brake_amount * brake_amount / 2000) * brake_amount) / 2000;
-                        brake_amount = (uint16_t)(((uint32_t)brake_amount * 70 + cubic_brake * 30) / 100);
+                        if (brake_amount >= 1700) {
+                            // > 85% stick: Panic brake / Notanker! Immediate 100% authority, bypass speed attenuation
+                            brake_speed_scale = 100;
+                        } else {
+                            uint32_t cubic_brake = (((uint32_t)brake_amount * brake_amount / 2000) * brake_amount) / 2000;
+                            brake_amount = (uint16_t)(((uint32_t)brake_amount * 70 + cubic_brake * 30) / 100);
+                        }
                     }
 
                     uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI (1-10)
@@ -1476,7 +1481,7 @@ if (!stepper_sine && armed) {
                     uint32_t max_limit = (uint32_t)brake_level * 200;
 
                     base_brake_duty_cycle = (brake_amount * max_limit) / 2000;
-                    if (forward == (1 - eepromBuffer.dir_reversed)) {
+                    if (forward == (1 - eepromBuffer.dir_reversed) && brake_speed_scale < 100) {
                         prop_brake_duty_cycle = (base_brake_duty_cycle * brake_speed_scale) / 100;
                     } else {
                         prop_brake_duty_cycle = base_brake_duty_cycle;
@@ -1709,9 +1714,12 @@ void tenKhzRoutine()
                 if (prop_brake_active && (forward == (1 - eepromBuffer.dir_reversed))) {
                     if (brake_speed_scale < 100) {
                         brake_ramp_timer++;
-                        if (brake_ramp_timer >= 6) { // ~400ms from 35% to 100%
+                        if (brake_ramp_timer >= 3) { // ~100ms total blend from 35% to 100% (+2% every 3ms)
                             brake_ramp_timer = 0;
-                            brake_speed_scale++;
+                            brake_speed_scale += 2;
+                            if (brake_speed_scale > 100) {
+                                brake_speed_scale = 100;
+                            }
                             prop_brake_duty_cycle = (base_brake_duty_cycle * brake_speed_scale) / 100;
                             if (prop_brake_duty_cycle >= 1999) {
                                 fullBrake();
