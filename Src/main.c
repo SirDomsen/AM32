@@ -708,33 +708,38 @@ void loadEEpromSettings()
             eepromBuffer.drag_brake_strength = 10;
         }
 
-        if (eepromBuffer.driving_brake_strength == 0 || eepromBuffer.driving_brake_strength > 9) { // motor brake 1-9
+        if (eepromBuffer.driving_brake_strength == 0 || eepromBuffer.driving_brake_strength > 10) { // motor brake 1-10
             eepromBuffer.driving_brake_strength = 10;
         }
 
-        if(eepromBuffer.driving_brake_strength < 10){
+        // Force RC Car mode, 3D bi-directional, and brake_on_stop=1 to unlock sliders in GUI
+        eepromBuffer.rc_car_reverse = 1;
+        eepromBuffer.bi_direction = 1;
+        eepromBuffer.brake_on_stop = 1;
+
+        if (!eepromBuffer.rc_car_reverse && eepromBuffer.driving_brake_strength < 10) {
             dead_time_override = DEAD_TIME + (150 - (eepromBuffer.driving_brake_strength * 10));
             if (dead_time_override > 200) {
                 dead_time_override = 200;
             }
-        min_startup_duty = min_startup_duty + dead_time_override;
-        minimum_duty_cycle = minimum_duty_cycle + dead_time_override;
-        throttle_max_at_low_rpm = throttle_max_at_low_rpm + dead_time_override;
-        startup_max_duty_cycle = startup_max_duty_cycle + dead_time_override;
+            min_startup_duty = min_startup_duty + dead_time_override;
+            minimum_duty_cycle = minimum_duty_cycle + dead_time_override;
+            throttle_max_at_low_rpm = throttle_max_at_low_rpm + dead_time_override;
+            startup_max_duty_cycle = startup_max_duty_cycle + dead_time_override;
 #ifdef STMICRO
-        TIM1->BDTR |= dead_time_override;
+            TIM1->BDTR |= dead_time_override;
 #endif
 #ifdef ARTERY
-        TMR1->brk |= dead_time_override;
+            TMR1->brk |= dead_time_override;
 #endif
 #ifdef GIGADEVICES
-        TIMER_CCHP(TIMER0) |= dead_time_override;
+            TIMER_CCHP(TIMER0) |= dead_time_override;
 #endif
 #ifdef NXP
-    	for (int submodule = 0; submodule <= 2; submodule++) {
-    		FLEXPWM0->SM[submodule].DTCNT0 = PWM_DTCNT0_DTCNT0(dead_time_override);	//PWMA deadtime
-    		FLEXPWM0->SM[submodule].DTCNT1 = PWM_DTCNT1_DTCNT1(dead_time_override);	//PWMB deadtime
-    	}
+            for (int submodule = 0; submodule <= 2; submodule++) {
+                FLEXPWM0->SM[submodule].DTCNT0 = PWM_DTCNT0_DTCNT0(dead_time_override);	//PWMA deadtime
+                FLEXPWM0->SM[submodule].DTCNT1 = PWM_DTCNT1_DTCNT1(dead_time_override);	//PWMB deadtime
+            }
 #endif
 #ifdef WCH
             TIM1->BDTR |= dead_time_override;
@@ -825,7 +830,11 @@ void loadEEpromSettings()
     }else{
       polling_mode_changeover = POLLING_MODE_THRESHOLD;
     }
-    temp_comp_pwm = eepromBuffer.comp_pwm;
+    if (eepromBuffer.rc_car_reverse) {
+        temp_comp_pwm = 0; // Freewheeling (no damped light) for RC car
+    } else {
+        temp_comp_pwm = eepromBuffer.comp_pwm;
+    }
 }
 
 void saveEEpromSettings()
@@ -1050,42 +1059,72 @@ void setInput()
     if (eepromBuffer.bi_direction) {
         if (dshot == 0) {
             if (eepromBuffer.rc_car_reverse) {
-                if (newinput > (1000 + (servo_dead_band << 1))) {
+                uint16_t db = servo_dead_band << 1;
+                if (newinput > (1000 + db)) {
+                    // Forward throttle applied
                     if (forward == eepromBuffer.dir_reversed) {
-                        adjusted_input = 0;
-                        //               if (running) {
-                        prop_brake_active = 1;
-                        if (return_to_center) {
+                        // Currently in reverse:
+                        if (running) {
+                            // Motor still rotating backward: brake to standstill!
+                            adjusted_input = 0;
+                            prop_brake_active = 1;
+                            return_to_center = 0;
+                        } else {
+                            // Motor stopped (0 RPM): immediate transition to forward!
                             forward = 1 - eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
                             return_to_center = 0;
+                            zero_crosses = 0;
+                            old_routine = 1;
+                            maskPhaseInterrupts();
+                            brushed_direction_set = 0;
+                            adjusted_input = map(newinput, 1000 + db, 2000, 47, 2047);
                         }
-                    }
-                    if (prop_brake_active == 0) {
+                    } else {
+                        // Already in forward mode: drive forward
+                        prop_brake_active = 0;
                         return_to_center = 0;
-                        adjusted_input = map(newinput, 1000 + (servo_dead_band << 1), 2000, 47, 2047);
+                        adjusted_input = map(newinput, 1000 + db, 2000, 47, 2047);
                     }
-                }
-                if (newinput < (1000 - (servo_dead_band << 1))) {
+                } else if (newinput < (1000 - db)) {
+                    // Reverse throttle / brake applied
                     if (forward == (1 - eepromBuffer.dir_reversed)) {
-                        adjusted_input = 0;
-                        prop_brake_active = 1;
-                        if (return_to_center) {
+                        // Currently in forward:
+                        if (running || !return_to_center) {
+                            // Motor still rotating forward OR double-tap not armed: brake!
+                            adjusted_input = 0;
+                            prop_brake_active = 1;
+                        } else {
+                            // Motor stopped AND return_to_center == 1: engage reverse!
                             forward = eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
-                            return_to_center = 0;
+                            zero_crosses = 0;
+                            old_routine = 1;
+                            maskPhaseInterrupts();
+                            brushed_direction_set = 0;
+                            uint8_t rev_level = eepromBuffer.driving_brake_strength; // "Running brake level" in GUI
+                            if (rev_level < 1) rev_level = 1;
+                            if (rev_level > 10) rev_level = 10;
+                            uint32_t max_rev_throttle = 47 + ((2047 - 47) * rev_level) / 10;
+                            adjusted_input = map(newinput, 0, 1000 - db, max_rev_throttle, 47);
                         }
-                    }
-                    if (prop_brake_active == 0) {
-                        return_to_center = 0;
-                        adjusted_input = map(newinput, 0, 1000 - (servo_dead_band << 1), 2047, 47);
-                    }
-                }
-                if (newinput >= (1000 - (servo_dead_band << 1)) && newinput <= (1000 + (servo_dead_band << 1))) {
-                    adjusted_input = 0;
-                    if (prop_brake_active) {
+                    } else {
+                        // Already in reverse mode: drive reverse
                         prop_brake_active = 0;
-                        return_to_center = 1;
+                        uint8_t rev_level = eepromBuffer.driving_brake_strength; // "Running brake level" in GUI
+                        if (rev_level < 1) rev_level = 1;
+                        if (rev_level > 10) rev_level = 10;
+                        uint32_t max_rev_throttle = 47 + ((2047 - 47) * rev_level) / 10;
+                        adjusted_input = map(newinput, 0, 1000 - db, max_rev_throttle, 47);
+                    }
+                } else {
+                    // Neutral throttle
+                    adjusted_input = 0;
+                    prop_brake_active = 0;
+                    if (!running) {
+                        return_to_center = 1; // arm reverse only when stopped at neutral
+                    } else {
+                        return_to_center = 0;
                     }
                 }
             } else {
@@ -1125,45 +1164,67 @@ void setInput()
             }
         }
         if (dshot) {
-                     if (eepromBuffer.rc_car_reverse) {
-                         if (newinput > 1047) {
-                         if (forward == eepromBuffer.dir_reversed) {
-                         adjusted_input = 0;
-                         prop_brake_active = 1;
-                         if (return_to_center) {
-                             forward = 1 - eepromBuffer.dir_reversed;
-                             prop_brake_active = 0;
-                             return_to_center = 0;
-                         }
-                     }
-                     if (prop_brake_active == 0) {
-                         return_to_center = 0;
-                         adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
-                     }
-                     }
-                     if (newinput <= 1047 && newinput > 47) {
-                     if (forward == (1 - eepromBuffer.dir_reversed)) {
-                         adjusted_input = 0;
-                         prop_brake_active = 1;
-                         if (return_to_center) {
-                             forward = eepromBuffer.dir_reversed;
-                             prop_brake_active = 0;
-                             return_to_center = 0;
-                         }
-                     }
-                     if (prop_brake_active == 0) {
-                         return_to_center = 0;
-                         adjusted_input = ((newinput - 48) * 2 + 47) - reversing_dead_band;
-                     }
-                     }
-                     if (newinput < 48) {
-                     adjusted_input = 0;
-                     if (prop_brake_active) {
-                         prop_brake_active = 0;
-                         return_to_center = 1;
-                     }
-                 }
-                         } else {
+            if (eepromBuffer.rc_car_reverse) {
+                if (newinput > 1047) {
+                    // Forward throttle applied
+                    if (forward == eepromBuffer.dir_reversed) {
+                        if (running) {
+                            adjusted_input = 0;
+                            prop_brake_active = 1;
+                            return_to_center = 0;
+                        } else {
+                            forward = 1 - eepromBuffer.dir_reversed;
+                            prop_brake_active = 0;
+                            return_to_center = 0;
+                            zero_crosses = 0;
+                            old_routine = 1;
+                            maskPhaseInterrupts();
+                            brushed_direction_set = 0;
+                            adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
+                        }
+                    } else {
+                        prop_brake_active = 0;
+                        return_to_center = 0;
+                        adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
+                    }
+                } else if (newinput <= 1047 && newinput > 47) {
+                    // Reverse throttle / brake applied
+                    if (forward == (1 - eepromBuffer.dir_reversed)) {
+                        if (running || !return_to_center) {
+                            adjusted_input = 0;
+                            prop_brake_active = 1;
+                        } else {
+                            forward = eepromBuffer.dir_reversed;
+                            prop_brake_active = 0;
+                            zero_crosses = 0;
+                            old_routine = 1;
+                            maskPhaseInterrupts();
+                            brushed_direction_set = 0;
+                            uint8_t rev_level = eepromBuffer.driving_brake_strength; // "Running brake level" in GUI
+                            if (rev_level < 1) rev_level = 1;
+                            if (rev_level > 10) rev_level = 10;
+                            uint32_t max_rev_throttle = 47 + ((2047 - 47) * rev_level) / 10;
+                            adjusted_input = map(newinput, 48, 1047, max_rev_throttle, 47);
+                        }
+                    } else {
+                        prop_brake_active = 0;
+                        uint8_t rev_level = eepromBuffer.driving_brake_strength; // "Running brake level" in GUI
+                        if (rev_level < 1) rev_level = 1;
+                        if (rev_level > 10) rev_level = 10;
+                        uint32_t max_rev_throttle = 47 + ((2047 - 47) * rev_level) / 10;
+                        adjusted_input = map(newinput, 48, 1047, max_rev_throttle, 47);
+                    }
+                } else {
+                    // Neutral throttle (< 48)
+                    adjusted_input = 0;
+                    prop_brake_active = 0;
+                    if (!running) {
+                        return_to_center = 1;
+                    } else {
+                        return_to_center = 0;
+                    }
+                }
+            } else {
             if (newinput > 1047) {
 
                 if (forward == eepromBuffer.dir_reversed) {
@@ -1308,7 +1369,61 @@ if (!stepper_sine && armed) {
                 play_tone_flag = 0;
             }
 
-            if (!eepromBuffer.comp_pwm) {
+            if (eepromBuffer.rc_car_reverse) {
+                duty_cycle_setpoint = 0;
+                if (!running) {
+                    old_routine = 1;
+                    zero_crosses = 0;
+                    if (!prop_brake_active) {
+                        allOff();
+                    }
+                }
+                if (prop_brake_active) {
+#ifndef PWM_ENABLE_BRIDGE
+                    uint16_t brake_amount = 0;
+                    if (dshot == 0) {
+                        uint16_t db = servo_dead_band << 1;
+                        if (forward == (1 - eepromBuffer.dir_reversed)) {
+                            // Forward driving: reverse input (< 1000 - db) is brake
+                            if (newinput < (1000 - db)) {
+                                brake_amount = map(newinput, 1000 - db, 0, 0, 2000);
+                            }
+                        } else {
+                            // Reverse driving: forward input (> 1000 + db) is brake
+                            if (newinput > (1000 + db)) {
+                                brake_amount = map(newinput, 1000 + db, 2000, 0, 2000);
+                            }
+                        }
+                    } else {
+                        if (forward == (1 - eepromBuffer.dir_reversed)) {
+                            // Forward driving: reverse dshot (48..1047) is brake
+                            if (newinput <= 1047 && newinput > 47) {
+                                brake_amount = map(newinput, 1047, 48, 0, 2000);
+                            }
+                        } else {
+                            // Reverse driving: forward dshot (> 1047) is brake
+                            if (newinput > 1047) {
+                                brake_amount = map(newinput, 1048, 2047, 0, 2000);
+                            }
+                        }
+                    }
+
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
+                    uint32_t max_limit = (uint32_t)brake_level * 200;
+                    prop_brake_duty_cycle = (brake_amount * max_limit) / 2000;
+
+                    if (prop_brake_duty_cycle >= 1999) {
+                        fullBrake();
+                    } else if (prop_brake_duty_cycle > 0) {
+                        proportionalBrake();
+                    } else {
+                        allOff();
+                    }
+#endif
+                }
+            } else if (!eepromBuffer.comp_pwm) {
                 duty_cycle_setpoint = 0;
                 if (!running) {
                     old_routine = 1;
@@ -1320,22 +1435,6 @@ if (!stepper_sine && armed) {
                             allOff();
                         }
                     }
-                }
-                if (eepromBuffer.rc_car_reverse && prop_brake_active) {
-#ifndef PWM_ENABLE_BRIDGE
-
-                  if (dshot == 0) prop_brake_duty_cycle = (getAbsDif(1000, newinput) + 1000);
-                    if (dshot)  {
-                        if (newinput <= 1047 && newinput > 47) prop_brake_duty_cycle = ((newinput - 48) * 2 + 47) - reversing_dead_band;
-                        if (newinput > 1047) prop_brake_duty_cycle = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
-                    }
-                    if (prop_brake_duty_cycle >= (1999)) {
-
-                        fullBrake();
-                    } else {
-                        proportionalBrake();
-                    }
-#endif
                 }
             } else {
                 if (!running) {
@@ -1571,47 +1670,47 @@ void tenKhzRoutine()
              duty_cycle = last_duty_cycle;
             }
 
-        if ((armed && running) && input > 47) {
-          if(zero_throttle_brake_active){
-            zero_throttle_brake_active = 0;
-            temp_comp_pwm = eepromBuffer.comp_pwm;
-          }else{
+        if (prop_brake_active) {
+            adjusted_duty_cycle = tim1_arr - ((prop_brake_duty_cycle * tim1_arr) / 2000);
+        } else if ((armed && running) && input > 47) {
+            if (eepromBuffer.rc_car_reverse) {
+                temp_comp_pwm = 0; // Freewheeling (no damped light) while driving in car mode
+            } else if (zero_throttle_brake_active) {
+                zero_throttle_brake_active = 0;
+                temp_comp_pwm = eepromBuffer.comp_pwm;
+            }
             adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2000) + 1;
-        }
         } else {
-          if(running && input < 47){ // brake on zero throttle behavior while motor is still rotating
-            if(eepromBuffer.brake_on_zero_throttle == 1){   // coast on 0 throttle
-              temp_comp_pwm = 0;                            // tracks rpm until stopped 
-              zero_throttle_brake_active = 1;
-            }
-              if(eepromBuffer.brake_on_zero_throttle == 2){   // motor brake on 0 throttle    
-              temp_comp_pwm = 1;                             // tracks rpm until stopped
-              zero_throttle_brake_active = 1;
-            }
-              if((eepromBuffer.brake_on_zero_throttle > 2) && (eepromBuffer.brake_on_zero_throttle < 10)){   // brake on 0 throttle after 2 + x seconds
-              if(zero_throttle_brake_active == 0){
-                brake_countdown = eepromBuffer.brake_on_zero_throttle - 2;  // brake countdown decremented in 10khz routine
-                tenkhzcounter = 10000; 
-              }
-              if((brake_countdown == 0) && (zero_throttle_brake_active == 1)){
-                zero_crosses = 0;                          // after countdown forces the brake on stop behavior 
-                running = 0;                               // stops tracking rpm
-              }
-              zero_throttle_brake_active = 1;
-              }
-              adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2000);
-          } else{  // input less than 47 and not running, normal brake on stop behavior
-            if (prop_brake_active) {
-              adjusted_duty_cycle =  tim1_arr - ((prop_brake_duty_cycle * tim1_arr) / 2000);
-            } else {
-              if((eepromBuffer.brake_on_stop == 2) && armed){  // require arming for active brake
-                comStep(2);
-                adjusted_duty_cycle = DEAD_TIME + ((eepromBuffer.active_brake_power * tim1_arr) / 2000)* 10;
-            }else{
+            if (running && input < 47) { // brake on zero throttle behavior while motor is still rotating
+                if (eepromBuffer.rc_car_reverse) {
+                    temp_comp_pwm = 0; // coast on 0 throttle
+                    zero_throttle_brake_active = 1;
+                } else if (eepromBuffer.brake_on_zero_throttle == 1) { // coast on 0 throttle
+                    temp_comp_pwm = 0; // tracks rpm until stopped 
+                    zero_throttle_brake_active = 1;
+                } else if (eepromBuffer.brake_on_zero_throttle == 2) { // motor brake on 0 throttle    
+                    temp_comp_pwm = 1; // tracks rpm until stopped
+                    zero_throttle_brake_active = 1;
+                } else if ((eepromBuffer.brake_on_zero_throttle > 2) && (eepromBuffer.brake_on_zero_throttle < 10)) { // brake on 0 throttle after 2 + x seconds
+                    if (zero_throttle_brake_active == 0) {
+                        brake_countdown = eepromBuffer.brake_on_zero_throttle - 2; // brake countdown decremented in 10khz routine
+                        tenkhzcounter = 10000; 
+                    }
+                    if ((brake_countdown == 0) && (zero_throttle_brake_active == 1)) {
+                        zero_crosses = 0; // after countdown forces the brake on stop behavior 
+                        running = 0; // stops tracking rpm
+                    }
+                    zero_throttle_brake_active = 1;
+                }
                 adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2000);
+            } else { // input less than 47 and not running, normal brake on stop behavior
+                if ((eepromBuffer.brake_on_stop == 2) && armed) { // require arming for active brake
+                    comStep(2);
+                    adjusted_duty_cycle = DEAD_TIME + ((eepromBuffer.active_brake_power * tim1_arr) / 2000) * 10;
+                } else {
+                    adjusted_duty_cycle = ((duty_cycle * tim1_arr) / 2000);
+                }
             }
-            }
-          }
         }
         last_duty_cycle = duty_cycle;
         SET_AUTO_RELOAD_PWM(tim1_arr);
@@ -2356,7 +2455,11 @@ if(zero_crosses < 5){
               if(running){
                 bemf_timeout_happened++;
                 
-                temp_comp_pwm = eepromBuffer.comp_pwm;
+                if (eepromBuffer.rc_car_reverse) {
+        temp_comp_pwm = 0; // Freewheeling (no damped light) for RC car
+    } else {
+        temp_comp_pwm = eepromBuffer.comp_pwm;
+    }
                 maskPhaseInterrupts();
                 old_routine = 1;
                 if (input < 48) {
@@ -2442,7 +2545,7 @@ if(zero_crosses < 5){
             } else {
                 running = 0;
                 do_once_sinemode = 1;
-                if (eepromBuffer.brake_on_stop == 1) {
+                if (!eepromBuffer.rc_car_reverse && eepromBuffer.brake_on_stop == 1) {
 #ifndef PWM_ENABLE_BRIDGE
                     prop_brake_duty_cycle =  eepromBuffer.drag_brake_strength * 200;
                     adjusted_duty_cycle =  tim1_arr - ((prop_brake_duty_cycle * tim1_arr) / 2000);
