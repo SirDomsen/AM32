@@ -11,21 +11,19 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **Neu:** Während der Fahrt (sowohl vorwärts als auch rückwärts) bleibt die Low-Side-PWM aus (`temp_comp_pwm = 0`). 
 * **Effekt:** Das Auto rollt beim Gaswegnehmen weich und frei auf die neue Geschwindigkeit bzw. zum Stillstand aus (Dioden-Freilauf).
 
-### 2. Einstellbare Betriebsbremskraft (`Brake strength`)
+### 2. Einstellbare Betriebsbremskraft (`Brake strength`) mit 30 % Expo
 * **Steuerung:** Über den Schieberegler **`Brake strength`** (im Code `drag_brake_strength`, Werte 1 bis 10) im Configurator.
 * **Skalierung:**
   * **Stufe 1:** 10 % maximale Bremskraft (sehr sanftes Abbremsen, schont Micro-Getriebe)
   * **Stufe 5:** 50 %
-  * **Stufe 8:** 80 % *(Entspricht dem bisherigen Setup mit auf 820 µs gestrecktem Servoweg)*
-  * **Stufe 9:** 90 %
-  * **Stufe 10:** 100 % (volle Phasenkurzschluss-Bremse)
-* **Linearer & feinfühliger Hebelweg:** Durch eine progressive Hebelkurve (50 % linear + 50 % quadratisch gemischt) spricht die Bremse im ersten Hebeldrittel butterweich an und greift nach hinten hin kraftvoll zu.
-* **Dynamische Drehzahlkompensation (Speed-Compensated Braking):** 
-  * Wirkt der natürlichen Back-EMF-Überhöhung bei High-Speed entgegen.
-  * Bei Höchstgeschwindigkeit wird die Bremsleistung automatisch auf 50 % gedämpft, um blockierende Räder oder ein ausbrechendes Heck zu verhindern.
-  * Verringert sich die Geschwindigkeit, regelt die Firmware die Bremskraft kontinuierlich bis auf 100 % hoch, um das Auto zuverlässig zum Stillstand zu bringen.
-* **Slew-Rate / Ruckdämpfung:** 
-  * Verhindert abrupte Drehmomentschläge auf das Getriebe durch sanftes Hochrampen der Brems-PWM über ~50 ms.
+  * **Stufe 8:** 80 %
+  * **Stufe 10:** 100 % (volle Phasenkurzschluss-Bremse `fullBrake()`, absolut identisch zur maximalen Hardware-Bremsleistung des Original-AM32)
+* **30 % Progressive Expo-Kennlinie (RC-Sender-Standard):**
+  * Verwendet eine kubische Mischung (70 % linear + 30 % kubisch) auf dem Hebelweg.
+  * **0 bis 40 % Hebelweg:** Extrem feinfühlige Bremswirkung (nur ~14–30 % Kraft). Erlaubt feinstes Anbremsen aus Topspeed (z. B. 50 km/h) ohne blockierende Räder oder Heckausbruch auf 2WD-Chassis.
+  * **Ab 70 % Hebelweg:** Zügiger Anstieg auf das über den Slider gewählte Maximum für Notbremsungen.
+* **Direktes Ansprechverhalten (Instant Response):**
+  * Keine künstliche Rampen-Verzögerung – der Bremsbefehl liegt verzögerungsfrei an den FETs an. Volle Finger-Kontrolle in Echtzeit.
 
 ### 3. Einstellbare Rückfahrgeschwindigkeit (`Running brake level`)
 * **Steuerung:** Über den Schieberegler **`Running brake level`** (im Code `driving_brake_strength`, Werte 1 bis 10) im Configurator.

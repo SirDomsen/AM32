@@ -1408,47 +1408,18 @@ if (!stepper_sine && armed) {
                         }
                     }
 
-                    // Progressive curve (50% linear + 50% quadratic) for fine trigger feel
-                    uint32_t quad_brake = ((uint32_t)brake_amount * brake_amount) / 2000;
-                    brake_amount = (brake_amount + quad_brake) / 2;
+                    // 30% Cubic Expo brake curve for delicate high-speed modulation:
+                    // 70% linear + 30% cubic (standard RC transmitter curve)
+                    uint32_t cubic_brake = (((uint32_t)brake_amount * brake_amount / 2000) * brake_amount) / 2000;
+                    brake_amount = (uint16_t)(((uint32_t)brake_amount * 70 + cubic_brake * 30) / 100);
 
-                    // Speed compensation: counteracts the high Back-EMF at high speeds
-                    // At top speed (low average_interval), scale down to 50% to prevent wheel lockup
-                    // Smoothly increases to 100% as the car slows down
-                    uint16_t speed_scale = 100;
-                    if (running && average_interval > 0) {
-                        if (average_interval < 150) {
-                            speed_scale = 50; // High speed
-                        } else if (average_interval < 1500) {
-                            speed_scale = map(average_interval, 150, 1500, 50, 100);
-                        } else {
-                            speed_scale = 100; // Low speed / standstill
-                        }
-                    }
-
-                    uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI (1-10)
                     if (brake_level < 1) brake_level = 1;
                     if (brake_level > 10) brake_level = 10;
                     uint32_t max_limit = (uint32_t)brake_level * 200;
-                    uint32_t target_duty = (brake_amount * max_limit) / 2000;
-                    target_duty = (target_duty * speed_scale) / 100;
 
-                    // Slew rate / brake ramping: ramp up smoothly (40 / ms) to prevent tire slip
-                    if (target_duty > prop_brake_duty_cycle) {
-                        prop_brake_duty_cycle += 40;
-                        if (prop_brake_duty_cycle > target_duty) {
-                            prop_brake_duty_cycle = target_duty;
-                        }
-                    } else {
-                        if (prop_brake_duty_cycle > 80) {
-                            prop_brake_duty_cycle -= 80;
-                        } else {
-                            prop_brake_duty_cycle = target_duty;
-                        }
-                        if (prop_brake_duty_cycle < target_duty) {
-                            prop_brake_duty_cycle = target_duty;
-                        }
-                    }
+                    // Direct, instant response without slew rate latency or speed scale cutoff
+                    prop_brake_duty_cycle = (brake_amount * max_limit) / 2000;
 
                     if (prop_brake_duty_cycle >= 1999) {
                         fullBrake();
