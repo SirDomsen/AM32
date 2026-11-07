@@ -316,6 +316,7 @@ uint16_t prop_brake_duty_cycle = 0;
 uint16_t base_brake_duty_cycle = 0;
 uint16_t brake_speed_scale = 100;
 uint16_t brake_ramp_timer = 0;
+uint8_t car_reverse_active = 0;
 uint16_t ledcounter = 0;
 uint16_t ramp_count;
 uint32_t process_time = 0;
@@ -1065,7 +1066,7 @@ void setInput()
                 uint16_t db = servo_dead_band << 1;
                 if (newinput > (1000 + db)) {
                     // Forward throttle applied
-                    if (forward == eepromBuffer.dir_reversed) {
+                    if (car_reverse_active) {
                         // Currently in reverse:
                         if (running) {
                             // Motor still rotating backward: brake to standstill!
@@ -1076,6 +1077,7 @@ void setInput()
                             return_to_center = 0;
                         } else {
                             // Motor stopped (0 RPM): immediate transition to forward!
+                            car_reverse_active = 0;
                             forward = 1 - eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
                             brake_speed_scale = 100;
@@ -1089,6 +1091,8 @@ void setInput()
                         }
                     } else {
                         // Already in forward mode: drive forward
+                        car_reverse_active = 0;
+                        forward = 1 - eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
                         brake_speed_scale = 100;
                         brake_ramp_timer = 0;
@@ -1097,7 +1101,7 @@ void setInput()
                     }
                 } else if (newinput < (1000 - db)) {
                     // Reverse throttle / brake applied
-                    if (forward == (1 - eepromBuffer.dir_reversed)) {
+                    if (!car_reverse_active) {
                         // Currently in forward:
                         if (running || !return_to_center) {
                             // Motor still rotating forward OR double-tap not armed: brake!
@@ -1120,6 +1124,7 @@ void setInput()
                             prop_brake_active = 1;
                         } else {
                             // Motor stopped AND return_to_center == 1: engage reverse!
+                            car_reverse_active = 1;
                             forward = eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
                             brake_speed_scale = 100;
@@ -1136,6 +1141,7 @@ void setInput()
                         }
                     } else {
                         // Already in reverse mode: drive reverse
+                        forward = eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
                         brake_speed_scale = 100;
                         brake_ramp_timer = 0;
@@ -1197,7 +1203,7 @@ void setInput()
             if (eepromBuffer.rc_car_reverse) {
                 if (newinput > 1047) {
                     // Forward throttle applied
-                    if (forward == eepromBuffer.dir_reversed) {
+                    if (car_reverse_active) {
                         if (running) {
                             adjusted_input = 0;
                             prop_brake_active = 1;
@@ -1205,6 +1211,7 @@ void setInput()
                             brake_ramp_timer = 0;
                             return_to_center = 0;
                         } else {
+                            car_reverse_active = 0;
                             forward = 1 - eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
                             brake_speed_scale = 100;
@@ -1217,6 +1224,8 @@ void setInput()
                             adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
                         }
                     } else {
+                        car_reverse_active = 0;
+                        forward = 1 - eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
                         brake_speed_scale = 100;
                         brake_ramp_timer = 0;
@@ -1225,7 +1234,7 @@ void setInput()
                     }
                 } else if (newinput <= 1047 && newinput > 47) {
                     // Reverse throttle / brake applied
-                    if (forward == (1 - eepromBuffer.dir_reversed)) {
+                    if (!car_reverse_active) {
                         if (running || !return_to_center) {
                             adjusted_input = 0;
                             if (!prop_brake_active) {
@@ -1244,6 +1253,7 @@ void setInput()
                             }
                             prop_brake_active = 1;
                         } else {
+                            car_reverse_active = 1;
                             forward = eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
                             brake_speed_scale = 100;
@@ -1259,6 +1269,7 @@ void setInput()
                             adjusted_input = map(newinput, 48, 1047, max_rev_throttle, 47);
                         }
                     } else {
+                        forward = eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
                         brake_speed_scale = 100;
                         brake_ramp_timer = 0;
@@ -1439,7 +1450,7 @@ if (!stepper_sine && armed) {
                     uint16_t brake_amount = 0;
                     if (dshot == 0) {
                         uint16_t db = servo_dead_band << 1;
-                        if (forward == (1 - eepromBuffer.dir_reversed)) {
+                        if (!car_reverse_active) {
                             // Forward driving: reverse input (< 1000 - db) is brake
                             if (newinput < (1000 - db)) {
                                 brake_amount = map(newinput, 1000 - db, 0, 0, 2000);
@@ -1451,7 +1462,7 @@ if (!stepper_sine && armed) {
                             }
                         }
                     } else {
-                        if (forward == (1 - eepromBuffer.dir_reversed)) {
+                        if (!car_reverse_active) {
                             // Forward driving: reverse dshot (48..1047) is brake
                             if (newinput <= 1047 && newinput > 47) {
                                 brake_amount = map(newinput, 1047, 48, 0, 2000);
@@ -1465,7 +1476,7 @@ if (!stepper_sine && armed) {
                     }
 
                     // Apply 30% Cubic Expo and snapshot speed scaling ONLY when braking from forward drive!
-                    if (forward == (1 - eepromBuffer.dir_reversed)) {
+                    if (!car_reverse_active) {
                         if (brake_amount >= 1700) {
                             // > 85% stick: Panic brake / Notanker! Immediate 100% authority, bypass speed attenuation
                             brake_speed_scale = 100;
@@ -1481,7 +1492,7 @@ if (!stepper_sine && armed) {
                     uint32_t max_limit = (uint32_t)brake_level * 200;
 
                     base_brake_duty_cycle = (brake_amount * max_limit) / 2000;
-                    if (forward == (1 - eepromBuffer.dir_reversed) && brake_speed_scale < 100) {
+                    if (!car_reverse_active && brake_speed_scale < 100) {
                         prop_brake_duty_cycle = (base_brake_duty_cycle * brake_speed_scale) / 100;
                     } else {
                         prop_brake_duty_cycle = base_brake_duty_cycle;
@@ -1711,7 +1722,7 @@ void tenKhzRoutine()
                 }
             }
             if (eepromBuffer.rc_car_reverse) {
-                if (prop_brake_active && (forward == (1 - eepromBuffer.dir_reversed))) {
+                if (prop_brake_active && !car_reverse_active) {
                     if (brake_speed_scale < 100) {
                         brake_ramp_timer++;
                         if (brake_ramp_timer >= 3) { // ~100ms total blend from 35% to 100% (+2% every 3ms)
