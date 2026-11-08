@@ -34,15 +34,15 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * **Stufe 3:** 30 % Rückwärts-Leistung (optimal für enges Rangieren ohne Durchdrehen)
 * **Volle Auflösung:** Der Hebelweg des Senders bleibt auch bei reduzierter Rückwärts-Power zu 100 % erhalten – du hast die volle Präzision und Feinfühligkeit.
 
-### 4. Symmetrischer Getriebeschutz (Rückwärts $\rightarrow$ Vorwärts)
+### 4. Symmetrischer Getriebeschutz & Sofort-Wende (Rückwärts $\rightarrow$ Vorwärts)
 * Fährt das Auto rückwärts und du gibst Vorwärtsgas:
-  * Das Vorwärtsgas wirkt als **dosierte Bremse bis zum Stillstand (0 RPM)**.
+  * Das Vorwärtsgas greift sofort mit **100 % Vollbremsung (`fullBrake()`)**, um die Rückwärtsdrehung in wenigen Millisekunden zu stoppen.
   * Sobald die sensorlose Kommutierung Stillstand erkennt (`running == 0`), schaltet der Regler **ohne Verzögerung direkt in Vorwärtsfahrt** um und beschleunigt los.
   * Der Hebel muss **nicht** erst in Neutral losgelassen werden!
 
 ### 5. Double-Tap & Stillstandsschutz (Vorwärts $\rightarrow$ Rückwärts)
 * Fährst du vorwärts und drückst nach hinten:
-  * Wirkt proportional als Bremse bis zum Stillstand.
+  * Wirkt als proportionale Verzögerungsregelung bis zum Stillstand.
   * Erst wenn der Gashebel **Neutral durchläuft UND der Motor tatsächlich steht**, wird der Rückwärtsgang freigegeben.
   * Erst der nächste Druck nach hinten fährt rückwärts an.
   * Rollt das Auto noch schnell vorwärts und man tippt am Hebel, bleibt der Rückwärtsgang gesperrt und bremst weiterhin sicher ab (Getriebeschutz).
@@ -51,17 +51,31 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * Obwohl in der GUI `Brake on stop` aktiv gesetzt wird (um den Schieber freizuschalten), greift in Neutralstellung **keine automatische Blockierbremse**.
 * Bei Hebel in Neutral schaltet der Regler immer auf Freilauf (`allOff()`), sodass das Auto natürlich ausrollt.
 
+### 7. Globaler Bugfix der AM32 `map()`-Funktion (`Src/functions.c`)
+* **Problem im AM32-Original:** Die `map()`-Funktion prüfte Grenzüberschreitungen vor der Umkehrprüfung (`if (in_min > in_max)`). Bei fallenden Wertebereichen (z. B. Bremsweg von 950 nach 0) gab `map()` für alle Werte $\ge 0$ sofort `out_max` (100 %) zurück $\rightarrow$ digitaler Vollanker ohne Dosierbarkeit.
+* **Lösung:** `map()` prüft umgekehrte Wertebereiche nun an erster Stelle, und die Bremsmodulation rechnet direkt per Dreisatz.
+
 ---
 
 ## 🎛️ Mapping im AM32-Web-Configurator
 
 | GUI-Element | EEPROM-Feld | Funktion im Car-Modus |
 | :--- | :--- | :--- |
-| **`Brake strength`** (1–10) | `drag_brake_strength` | **Maximale Bremskraft** (10 % bis 100 %) |
+| **`Brake strength`** (1–10) | `drag_brake_strength` | **Maximalverzögerung / Grip-Level** (3 bis 30 RPM/ms, ABS-Grenze) |
 | **`Running brake level`** (1–10) | `driving_brake_strength` | **Maximale Rückfahrgeschwindigkeit** (10 % bis 100 %) |
 | **`Car type reverse braking`** | `rc_car_reverse` | Fest aktiviert (`1`) |
 | **`3D mode`** | `bi_direction` | Fest aktiviert (`1`) |
 | **`Brake on stop`** | `brake_on_stop` | GUI-Freischalter (`1`), im Fahrbetrieb Freilauf in Neutral |
+
+---
+
+## 📜 Release-Historie
+
+* **2.22_1:** Initialer Car-Modus (Freilauf bei Gasrücknahme, symmetrischer Getriebeschutz, Schieberegler-Freischaltung).
+* **2.22_4:** Entkopplung des internen Rückwärtsgang-Status (`car_reverse_active`) von `dir_reversed`.
+* **2.22_5:** Behebung des AM32 `map()`-Bugs bei umgekehrten Zahlenbereichen; direkte Hebel-Dreisatzberechnung.
+* **2.22_6:** Vollständige Entfernung aller künstlichen Brems-Zeitverzögerungen/Rampen; 100 % Sofort-Biss beim Wenden aus Rückwärtsfahrt.
+* **2.22_7:** Einführung des **geschlossenen 1-kHz-Verzögerungsregelkreises mit Anti-Lock (ABS)** und Kalibrierung über `Brake strength` (3 bis 30 RPM/ms).
 
 ---
 
