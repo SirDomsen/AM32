@@ -11,7 +11,7 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **Neu:** Während der Fahrt (sowohl vorwärts als auch rückwärts) bleibt die Low-Side-PWM aus (`temp_comp_pwm = 0`). 
 * **Effekt:** Das Auto rollt beim Gaswegnehmen weich und frei auf die neue Geschwindigkeit bzw. zum Stillstand aus (Dioden-Freilauf).
 
-### 2. Intelligente Verzögerungsregelung (`Brake strength`) mit Anti-Lock / ABS (Release 2.22_7)
+### 2. Intelligente Verzögerungsregelung (`Brake strength`) mit dynamischem Re-Grip ABS (Release 2.22_8)
 * **Steuerung:** Über den Schieberegler **`Brake strength`** (im Code `drag_brake_strength`, Werte 1 bis 10) im Configurator.
 * **Grip-Level / Maximalverzögerung (in RPM/ms):**
   * Der Schieberegler fungiert nun als Kalibrierung der **maximal physikalisch fahrbaren Verzögerungsrate** ($\text{Stufe} \times 3\,\text{RPM/ms}$):
@@ -21,7 +21,11 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **Geschlossener 1-kHz-Verzögerungsregelkreis (Closed-Loop Deceleration Tracking):**
   * **Linearer Drehzahlabfall:** Die Drehzahl fällt bei konstant gehaltenem Hebelweg exakt linear bis zum Stillstand ab.
   * **Schrittgeschwindigkeit / Stillstand:** Bei sinkender Drehzahl (wegbrechender Gegen-EMK) zieht der Regler die FETs automatisch stufenlos bis auf 100 % Phasenkurzschluss zu, sodass selbst ein sanfter Hebelbefehl das Auto zuverlässig auf den Punkt zum Stehen bringt.
-  * **Integriertes ABS (Anti-Lock):** Droht ein Rad auf Staub oder Bodenwellen zu blockieren (Drehzahl stürzt schneller ab als die Soll-Rampe), öffnet der Regler die Brems-PWM blitzschnell (bis zu $-60\text{/ms}$), fängt das Rad wieder ein und hält die Seitenführung aufrecht.
+* **Dynamisches Re-Grip ABS (Keine starren Timer, echtes Fahrbahn-Tracking):**
+  * **Sofortige Notentlastung:** Bricht die Raddrehzahl schneller ein als die Soll-Rampe (Blockadegefahr), schaltet der Regler die Bremse **augenblicklich zu 100 % auf Freilauf (`allOff()`)**.
+  * **Glasklare BEMF:** Im Freilauf sind alle FETs aus $\rightarrow$ AM32 sieht das absolut störungsfreie BEMF-Signal und beobachtet, wie der rollende Asphalt das Rad antreibt.
+  * **Beschleunigungs-Wächter:** Solange die Raddrehzahl steigt ($d\omega/dt > 0$), bleibt die Bremse voll geöffnet.
+  * **Neuer Bremszyklus bei Plateau:** Sobald das Rad nicht weiter beschleunigt (Rollgeschwindigkeit über Grund erreicht), startet der Regler sofort den nächsten Bremsversuch ab dieser erholten Geschwindigkeit (Sägezahn-Profil).
 * **Brutale 100 % Rückwärts-Bremse (Knackige Wende Rückwärts $\rightarrow$ Vorwärts):**
   * Beim Bremsen aus Rückwärtsfahrt (Antippen von Gas nach vorne) greift **sofort und kompromisslos 100 % Vollbremsung (`fullBrake()`)**.
   * Der Motor stoppt die Rückwärtsdrehung augenblicklich und schießt ohne Verzögerung vorwärts los.

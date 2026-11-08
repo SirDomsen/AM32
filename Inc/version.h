@@ -3,6 +3,6 @@
  */
 #define VERSION_MAJOR 2
 #define VERSION_MINOR 22
-#define VERSION_PATCH 7
+#define VERSION_PATCH 8
 
 #define EEPROM_VERSION 4

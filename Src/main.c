@@ -317,6 +317,11 @@ uint8_t car_reverse_active = 0;
 uint32_t brake_target_rpm = 0;
 uint8_t brake_ramp_active = 0;
 uint16_t current_brake_amount = 0;
+uint8_t abs_state = 0;
+uint32_t abs_peak_rpm = 0;
+uint16_t abs_hold_counter = 0;
+uint16_t abs_release_timer = 0;
+uint32_t last_actual_rpm = 0;
 uint16_t ledcounter = 0;
 uint16_t ramp_count;
 uint32_t process_time = 0;
@@ -1665,50 +1670,94 @@ void tenKhzRoutine()
                     if (!brake_ramp_active) {
                         brake_ramp_active = 1;
                         brake_target_rpm = actual_rpm;
+                        abs_state = 0;
                         prop_brake_duty_cycle = (current_brake_amount * 600) / 2000;
                     }
 
-                    if (brake_target_rpm > decel_step) {
-                        brake_target_rpm -= decel_step;
-                    } else {
-                        brake_target_rpm = 0;
-                    }
-
-                    // Anti-windup: keep target_rpm within a 2000 RPM window of actual_rpm
-                    if (actual_rpm > 2000 && brake_target_rpm < actual_rpm - 2000) {
-                        brake_target_rpm = actual_rpm - 2000;
-                    }
-                    if (brake_target_rpm > actual_rpm + 2000) {
-                        brake_target_rpm = actual_rpm + 2000;
-                    }
-
-                    // Closed-loop regulation (error = actual - target)
-                    int32_t rpm_error = (int32_t)actual_rpm - (int32_t)brake_target_rpm;
-                    int32_t duty_adjust = rpm_error / 50;
-                    if (duty_adjust > 30) duty_adjust = 30;
-                    if (duty_adjust < -60) duty_adjust = -60;
-
-                    int32_t new_duty = (int32_t)prop_brake_duty_cycle + duty_adjust;
-
-                    // When target reaches 0 and motor is slowing to a stop, ensure 100% full short-circuit
-                    if (brake_target_rpm == 0 && actual_rpm < 3000) {
-                        new_duty = 2000;
-                    }
-
-                    if (new_duty > 2000) new_duty = 2000;
-                    if (new_duty < 0) new_duty = 0;
-                    prop_brake_duty_cycle = (uint16_t)new_duty;
-
-                    if (prop_brake_duty_cycle >= 1999) {
-                        fullBrake();
-                    } else if (prop_brake_duty_cycle > 0) {
-                        proportionalBrake();
-                    } else {
+                    if (abs_state == 1) {
+                        // ABS_RELEASE: Brake 100% open (allOff), monitor wheel re-acceleration from road!
+                        prop_brake_duty_cycle = 0;
                         allOff();
+                        abs_release_timer++;
+
+                        if (actual_rpm > abs_peak_rpm) {
+                            abs_peak_rpm = actual_rpm;
+                            abs_hold_counter = 0; // Still accelerating!
+                        } else {
+                            abs_hold_counter++;
+                        }
+
+                        // Re-grip criteria:
+                        // Wheel spun up (> 1500 RPM) AND stopped accelerating for 4ms (reached road speed!)
+                        // OR safety timeout of 80ms
+                        if ((abs_peak_rpm > 1500 && abs_hold_counter >= 4) || abs_release_timer >= 80) {
+                            // Re-grip complete! Restart brake cycle from newly acquired road speed
+                            abs_state = 0;
+                            brake_target_rpm = abs_peak_rpm > actual_rpm ? abs_peak_rpm : actual_rpm;
+                            prop_brake_duty_cycle = (current_brake_amount * 400) / 2000; // gentle re-entry stroke
+                        }
+                    } else {
+                        // NORMAL BRAKING: Linear deceleration ramp tracking & lockup detection
+                        if (brake_target_rpm > decel_step) {
+                            brake_target_rpm -= decel_step;
+                        } else {
+                            brake_target_rpm = 0;
+                        }
+
+                        // Lockup / Breakaway Detection:
+                        // If above low-speed threshold (> 2500 RPM) AND
+                        // (actual RPM crashed > 3000 RPM below target OR actual RPM is 0)
+                        if (brake_target_rpm > 2500 && ((actual_rpm + 3000 < brake_target_rpm) || actual_rpm == 0)) {
+                            // Lockup detected! DUMP BRAKE IMMEDIATELY!
+                            abs_state = 1;
+                            abs_peak_rpm = actual_rpm;
+                            abs_hold_counter = 0;
+                            abs_release_timer = 0;
+                            prop_brake_duty_cycle = 0;
+                            allOff();
+                        } else {
+                            // Anti-windup: keep target_rpm within a 2000 RPM window of actual_rpm
+                            if (actual_rpm > 2000 && brake_target_rpm < actual_rpm - 2000) {
+                                brake_target_rpm = actual_rpm - 2000;
+                            }
+                            if (brake_target_rpm > actual_rpm + 2000) {
+                                brake_target_rpm = actual_rpm + 2000;
+                            }
+
+                            // Closed-loop regulation (error = actual - target)
+                            int32_t rpm_error = (int32_t)actual_rpm - (int32_t)brake_target_rpm;
+                            int32_t duty_adjust = rpm_error / 50;
+                            if (duty_adjust > 30) duty_adjust = 30;
+                            if (duty_adjust < -60) duty_adjust = -60;
+
+                            int32_t new_duty = (int32_t)prop_brake_duty_cycle + duty_adjust;
+
+                            // When target reaches 0 and motor is slowing to a stop, ensure 100% full short-circuit
+                            if (brake_target_rpm == 0 && actual_rpm < 2500) {
+                                new_duty = 2000;
+                            }
+
+                            if (new_duty > 2000) new_duty = 2000;
+                            if (new_duty < 0) new_duty = 0;
+                            prop_brake_duty_cycle = (uint16_t)new_duty;
+
+                            if (prop_brake_duty_cycle >= 1999) {
+                                fullBrake();
+                            } else if (prop_brake_duty_cycle > 0) {
+                                proportionalBrake();
+                            } else {
+                                allOff();
+                            }
+                        }
                     }
+                    last_actual_rpm = actual_rpm;
                 } else if (!prop_brake_active) {
                     brake_ramp_active = 0;
                     brake_target_rpm = 0;
+                    abs_state = 0;
+                    abs_peak_rpm = 0;
+                    abs_hold_counter = 0;
+                    abs_release_timer = 0;
                 }
             }
         }
