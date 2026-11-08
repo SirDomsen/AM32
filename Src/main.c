@@ -320,6 +320,7 @@ uint16_t current_brake_amount = 0;
 uint8_t abs_state = 0;
 uint32_t abs_peak_rpm = 0;
 uint16_t abs_hold_counter = 0;
+uint16_t abs_release_timer = 0;
 uint32_t last_actual_rpm = 0;
 uint16_t ledcounter = 0;
 uint16_t ramp_count;
@@ -1701,6 +1702,7 @@ void tenKhzRoutine()
                             // ABS_RELEASE: Brake 100% open (allOff), monitor wheel re-acceleration from road!
                             prop_brake_duty_cycle = 0;
                             allOff();
+                            abs_release_timer++;
 
                             if (actual_rpm > abs_peak_rpm) {
                                 abs_peak_rpm = actual_rpm;
@@ -1717,6 +1719,11 @@ void tenKhzRoutine()
                                 abs_state = 0;
                                 brake_target_rpm = abs_peak_rpm > actual_rpm ? abs_peak_rpm : actual_rpm;
                                 prop_brake_duty_cycle = (current_brake_amount * 400) / 1800; // gentle re-entry stroke
+                            } else if (abs_peak_rpm <= 600 && abs_release_timer >= 150) {
+                                // No measurable wheel recovery: finish braking instead of releasing indefinitely.
+                                abs_state = 0;
+                                brake_target_rpm = 0;
+                                prop_brake_duty_cycle = 2000;
                             }
                         } else {
                             // NORMAL BRAKING: Linear deceleration ramp tracking & lockup detection
@@ -1740,7 +1747,7 @@ void tenKhzRoutine()
                                     lockup = 1;
                                 }
                             }
-                            if (prop_brake_duty_cycle > 0 && actual_rpm < 1200) {
+                            if (brake_target_rpm > 1200 && prop_brake_duty_cycle > 0 && actual_rpm < 1200) {
                                 lockup = 1;
                             }
 
@@ -1749,6 +1756,7 @@ void tenKhzRoutine()
                                 abs_state = 1;
                                 abs_peak_rpm = actual_rpm;
                                 abs_hold_counter = 0;
+                                abs_release_timer = 0;
                                 prop_brake_duty_cycle = 0;
                                 allOff();
                                 // Keep comparator active to track BEMF re-acceleration
@@ -1771,6 +1779,11 @@ void tenKhzRoutine()
 
                                 int32_t new_duty = (int32_t)prop_brake_duty_cycle + duty_adjust;
 
+                                // Finish braking once the target reaches zero; do not re-enter ABS at standstill.
+                                if (brake_target_rpm == 0 && actual_rpm < 2000) {
+                                    new_duty = 2000;
+                                }
+
                                 if (new_duty > 2000) new_duty = 2000;
                                 if (new_duty < 0) new_duty = 0;
                                 prop_brake_duty_cycle = (uint16_t)new_duty;
@@ -1792,6 +1805,7 @@ void tenKhzRoutine()
                     abs_state = 0;
                     abs_peak_rpm = 0;
                     abs_hold_counter = 0;
+                    abs_release_timer = 0;
                 }
             }
         }

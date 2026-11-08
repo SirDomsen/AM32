@@ -100,6 +100,9 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * Schlupf nahe dem Stillstand löst ABS auch dann aus, wenn das Bremsziel bereits unter 2500 RPM liegt.
   * Die volle Bremsung bei Bremsziel 0 und die zeitbasierte Vollbremsung nach 150 ms ohne messbare Raddrehung wurden entfernt; ohne erfassbaren Wiedergriff bleibt die Bremse offen.
   * Die Wiederbremsung erfolgt nach einem messbaren Drehzahlplateau ab 600 RPM statt 1200 RPM.
+* **2.22_14:** **ABS-Release-Schleife bei niedriger Drehzahl behoben:**
+  * Der Near-Stop-ABS-Trigger greift nur, solange das Bremsziel noch über 1200 RPM liegt; bei erreichtem Ziel 0 wird die Bremse vollständig angezogen.
+  * Wenn sich das Rad im ABS-Freilauf nicht messbar erholt, wird nach 150 ms die Bremsung beendet statt unbegrenzt freizugeben.
 
 ---
 
