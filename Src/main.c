@@ -314,6 +314,9 @@ char send_esc_info_flag;
 uint32_t eeprom_address = EEPROM_START_ADD; 
 uint16_t prop_brake_duty_cycle = 0;
 uint8_t car_reverse_active = 0;
+uint32_t brake_target_rpm = 0;
+uint8_t brake_ramp_active = 0;
+uint16_t current_brake_amount = 0;
 uint16_t ledcounter = 0;
 uint16_t ramp_count;
 uint32_t process_time = 0;
@@ -1392,7 +1395,7 @@ if (!stepper_sine && armed) {
                 if (prop_brake_active) {
 #ifndef PWM_ENABLE_BRIDGE
                     if (!car_reverse_active) {
-                        // Forward driving: reverse stick is proportional LINEAR brake
+                        // Forward driving: reverse stick sets desired deceleration rate
                         uint16_t brake_amount = 0;
                         if (dshot == 0) {
                             uint16_t db = servo_dead_band << 1;
@@ -1408,29 +1411,27 @@ if (!stepper_sine && armed) {
                         if (brake_amount > 2000) {
                             brake_amount = 2000;
                         }
+                        current_brake_amount = brake_amount;
 
-                        uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI (1-10)
-                        if (brake_level < 1) brake_level = 1;
-                        if (brake_level > 10) brake_level = 10;
-                        uint32_t max_limit = (uint32_t)brake_level * 200;
-
-                        prop_brake_duty_cycle = (brake_amount * max_limit) / 2000;
+                        if (current_brake_amount == 0) {
+                            prop_brake_duty_cycle = 0;
+                            brake_ramp_active = 0;
+                            brake_target_rpm = 0;
+                            allOff();
+                        }
                     } else {
                         // Reverse driving: ANY forward stick is 100% HARD instant stop!
                         // Bites immediately with 100% full brake (no expo, no soft ramp)
+                        current_brake_amount = 2000;
                         prop_brake_duty_cycle = 2000;
-                    }
-
-                    if (prop_brake_duty_cycle >= 1999) {
                         fullBrake();
-                    } else if (prop_brake_duty_cycle > 0) {
-                        proportionalBrake();
-                    } else {
-                        allOff();
                     }
 #endif
                 } else {
+                    current_brake_amount = 0;
                     prop_brake_duty_cycle = 0;
+                    brake_ramp_active = 0;
+                    brake_target_rpm = 0;
                 }
             } else if (!eepromBuffer.comp_pwm) {
                 duty_cycle_setpoint = 0;
@@ -1641,6 +1642,73 @@ void tenKhzRoutine()
                 }
                 if (zero_crosses < 100) {
                     speedPid.integral = 0;
+                }
+            }
+            if (eepromBuffer.rc_car_reverse) {
+                if (prop_brake_active && !car_reverse_active && current_brake_amount > 0) {
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
+
+                    // Level 10 = 30 RPM/ms, Level 1 = 3 RPM/ms
+                    uint32_t max_rate = (uint32_t)brake_level * 3;
+                    uint32_t decel_step = ((uint32_t)current_brake_amount * max_rate) / 2000;
+                    if (decel_step < 1) {
+                        decel_step = 1;
+                    }
+
+                    uint32_t actual_rpm = 0;
+                    if (running && e_com_time > 0) {
+                        actual_rpm = 6000000 / e_com_time;
+                    }
+
+                    if (!brake_ramp_active) {
+                        brake_ramp_active = 1;
+                        brake_target_rpm = actual_rpm;
+                        prop_brake_duty_cycle = (current_brake_amount * 600) / 2000;
+                    }
+
+                    if (brake_target_rpm > decel_step) {
+                        brake_target_rpm -= decel_step;
+                    } else {
+                        brake_target_rpm = 0;
+                    }
+
+                    // Anti-windup: keep target_rpm within a 2000 RPM window of actual_rpm
+                    if (actual_rpm > 2000 && brake_target_rpm < actual_rpm - 2000) {
+                        brake_target_rpm = actual_rpm - 2000;
+                    }
+                    if (brake_target_rpm > actual_rpm + 2000) {
+                        brake_target_rpm = actual_rpm + 2000;
+                    }
+
+                    // Closed-loop regulation (error = actual - target)
+                    int32_t rpm_error = (int32_t)actual_rpm - (int32_t)brake_target_rpm;
+                    int32_t duty_adjust = rpm_error / 50;
+                    if (duty_adjust > 30) duty_adjust = 30;
+                    if (duty_adjust < -60) duty_adjust = -60;
+
+                    int32_t new_duty = (int32_t)prop_brake_duty_cycle + duty_adjust;
+
+                    // When target reaches 0 and motor is slowing to a stop, ensure 100% full short-circuit
+                    if (brake_target_rpm == 0 && actual_rpm < 3000) {
+                        new_duty = 2000;
+                    }
+
+                    if (new_duty > 2000) new_duty = 2000;
+                    if (new_duty < 0) new_duty = 0;
+                    prop_brake_duty_cycle = (uint16_t)new_duty;
+
+                    if (prop_brake_duty_cycle >= 1999) {
+                        fullBrake();
+                    } else if (prop_brake_duty_cycle > 0) {
+                        proportionalBrake();
+                    } else {
+                        allOff();
+                    }
+                } else if (!prop_brake_active) {
+                    brake_ramp_active = 0;
+                    brake_target_rpm = 0;
                 }
             }
         }
