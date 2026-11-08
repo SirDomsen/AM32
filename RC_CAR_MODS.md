@@ -111,6 +111,17 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
     * VerzÃ¶gert das Rad schneller als vom Hebel gefordert (Rad reiÃŸt ab) -> Bremse sofort 100 % AUF (`allOff()`).
     * Rad rollt frei hoch -> sobald es aufhÃ¶rt zu beschleunigen (Plateau erreicht) -> Bremse sofort wieder 100 % ZU (`fullBrake()`).
   * **Stillstand:** Bei Stillstand ist d(RPM)/dt = 0 <= Soll -> Bremse bleibt 100 % zu und hÃ¤lt den Wagen bombenfest. Rollt er am Hang an, regelt das ABS sofort wieder.
+* **2.22_16:** **Adaptive Bremskraft-Skalierung & Turnaround-Fix:**
+  * Nach Schlupf/Blockade wird die Bremskraft auf das 0,3-fache reduziert.
+  * Bei zu geringer Verzögerung wird die Bremskraft um das 1,3-fache gesteigert (bis maximal Knüppelwert).
+  * Sofort-Wende aus Rückwärtsbremsung bei 0 RPM ohne Gashebel-Release.
+* **2.22_17:** **16-ms-Gleitfenster & 32 RPM/ms Maximalverzögerung:**
+  * 16-ms Ringpuffer zur Eliminierung des Quantisierungsrauschens bei niedrigen Drehzahlen.
+* **2.22_18:** **100 % Knüppel-Startbiss & 4-ms-Sofortansprache:**
+  * Bremsung startet sofort mit 100 % der Knüppelkraft für direkten, verzögerungsfreien Antritt.
+  * Puffer wird beim Bremsstart sofort mit der aktuellen Drehzahl initialisiert (kein Blindflug mehr).
+  * Schlupferkennung bereits nach 4 ms aktiv, Bremskraft wird bei Traktionsverlust augenblicklich auf das 0,3-fache abgesenkt.
+  * Entlastet der Fahrer den Bremshebel, folgt die Bremskraft sofort nach unten.
 
 ---
 

@@ -1668,11 +1668,6 @@ void tenKhzRoutine()
                         target_decel = 1;
                     }
 
-                    // Initialize active_brake_duty on fresh brake application (starts at exactly 50% of stick, NO minimum clamp)
-                    if (active_brake_duty == 0) {
-                        active_brake_duty = current_brake_amount >> 1; // 50% of requested stick
-                    }
-
                     // 1. Get instantaneous RPM (with real-time decay if commutation is overdue)
                     uint32_t actual_rpm = 0;
                     if (running && e_com_time > 0) {
@@ -1683,6 +1678,21 @@ void tenKhzRoutine()
                                 actual_rpm = instant_rpm;
                             }
                         }
+                    }
+
+                    // Initialize active_brake_duty on fresh brake application (starts at 100% of stick)
+                    if (active_brake_duty == 0) {
+                        active_brake_duty = current_brake_amount; // 100% of requested stick
+                        for (int i = 0; i < 16; i++) {
+                            rpm_history[i] = actual_rpm;
+                        }
+                        history_idx = 0;
+                        brake_apply_timer = 0;
+                    }
+
+                    // Never exceed driver stick request if driver relaxes stick
+                    if (active_brake_duty > current_brake_amount) {
+                        active_brake_duty = current_brake_amount;
                     }
 
                     // Instant turnaround from reverse: if motor reached 0 RPM under forward brake, switch to forward drive!
@@ -1714,6 +1724,7 @@ void tenKhzRoutine()
                             for (int i = 0; i < 16; i++) {
                                 rpm_history[i] = actual_rpm;
                             }
+                            history_idx = 0;
                             brake_apply_timer = 0;
                             prop_brake_duty_cycle = active_brake_duty;
                             if (prop_brake_duty_cycle >= 1990) {
@@ -1750,8 +1761,8 @@ void tenKhzRoutine()
                         brake_apply_timer++;
 
                         // 1. Slip detection: deceleration too fast -> REDUCE FORCE (x 0.3) and OPEN BRAKE!
-                        // Evaluated once half the 16ms window has filled (8ms)
-                        if (brake_apply_timer >= 8) {
+                        // Evaluated after 4ms
+                        if (brake_apply_timer >= 4) {
                             if (measured_decel > (int32_t)target_decel || (actual_rpm == 0 && oldest_rpm > 500)) {
                                 active_brake_duty = (active_brake_duty * 3) / 10; // Reduce force by 70%!
                                 if (active_brake_duty < 40) active_brake_duty = 40;
