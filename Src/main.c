@@ -320,7 +320,7 @@ uint8_t abs_state = 0;
 uint32_t abs_peak_rpm = 0;
 uint16_t abs_hold_counter = 0;
 uint32_t last_actual_rpm = 0;
-uint32_t rpm_history[4] = {0, 0, 0, 0};
+uint32_t rpm_history[16] = {0};
 uint8_t history_idx = 0;
 uint8_t brake_apply_timer = 0;
 uint16_t ledcounter = 0;
@@ -1660,18 +1660,17 @@ void tenKhzRoutine()
                     if (brake_level < 1) brake_level = 1;
                     if (brake_level > 10) brake_level = 10;
 
-                    // Level 10 = 30 RPM/ms, Level 1 = 3 RPM/ms
-                    // Full stick (2000) = max_rate (linear scale)
-                    uint32_t max_rate = (uint32_t)brake_level * 3;
+                    // Level 10 = 32 RPM/ms max decel rate
+                    uint32_t max_rate = ((uint32_t)brake_level * 32) / 10;
+                    if (max_rate < 3) max_rate = 3;
                     uint32_t target_decel = ((uint32_t)current_brake_amount * max_rate) / 2000;
                     if (target_decel < 1) {
                         target_decel = 1;
                     }
 
-                    // Initialize active_brake_duty on fresh brake application (starts gentle at 25% of stick)
+                    // Initialize active_brake_duty on fresh brake application (starts at exactly 50% of stick, NO minimum clamp)
                     if (active_brake_duty == 0) {
-                        active_brake_duty = (current_brake_amount * 500) / 2000;
-                        if (active_brake_duty < 100) active_brake_duty = 100;
+                        active_brake_duty = current_brake_amount >> 1; // 50% of requested stick
                     }
 
                     // 1. Get instantaneous RPM (with real-time decay if commutation is overdue)
@@ -1712,7 +1711,7 @@ void tenKhzRoutine()
                         // Re-apply brake when acceleration has stopped (speed plateau / re-grip reached)
                         if (abs_hold_counter >= 4) {
                             abs_state = 0; // Back to BRAKING!
-                            for (int i = 0; i < 4; i++) {
+                            for (int i = 0; i < 16; i++) {
                                 rpm_history[i] = actual_rpm;
                             }
                             brake_apply_timer = 0;
@@ -1736,24 +1735,26 @@ void tenKhzRoutine()
                             allOff();
                         }
 
-                        // Update 4ms rolling window for deceleration measurement
+                        // Update 16ms rolling window for deceleration measurement
                         rpm_history[history_idx] = actual_rpm;
-                        uint8_t oldest_idx = (history_idx + 1) & 0x03; // modulo 4
+                        uint8_t oldest_idx = (history_idx + 1) & 0x0F; // modulo 16
                         uint32_t oldest_rpm = rpm_history[oldest_idx];
                         history_idx = oldest_idx;
 
+                        // Exactly RPM/ms over 16ms window: (oldest - current) >> 4
                         int32_t measured_decel = 0;
                         if (oldest_rpm > actual_rpm) {
-                            measured_decel = (int32_t)(oldest_rpm - actual_rpm) / 4;
+                            measured_decel = (int32_t)(oldest_rpm - actual_rpm) >> 4;
                         }
 
                         brake_apply_timer++;
 
                         // 1. Slip detection: deceleration too fast -> REDUCE FORCE (x 0.3) and OPEN BRAKE!
-                        if (brake_apply_timer >= 3) {
+                        // Evaluated once half the 16ms window has filled (8ms)
+                        if (brake_apply_timer >= 8) {
                             if (measured_decel > (int32_t)target_decel || (actual_rpm == 0 && oldest_rpm > 500)) {
                                 active_brake_duty = (active_brake_duty * 3) / 10; // Reduce force by 70%!
-                                if (active_brake_duty < 60) active_brake_duty = 60;
+                                if (active_brake_duty < 40) active_brake_duty = 40;
                                 abs_state = 1;
                                 abs_peak_rpm = actual_rpm;
                                 abs_hold_counter = 0;
@@ -1766,12 +1767,13 @@ void tenKhzRoutine()
                         }
 
                         // 2. Under-braking detection: deceleration too slow -> INCREASE FORCE (x 1.3)!
-                        if (abs_state == 0 && brake_apply_timer >= 8) {
+                        // Evaluated after full 16ms window has run
+                        if (abs_state == 0 && brake_apply_timer >= 16) {
                             if (measured_decel < (int32_t)((target_decel * 7) / 10)) {
                                 active_brake_duty = (active_brake_duty * 13) / 10; // Increase force by 30%!
                                 if (active_brake_duty > current_brake_amount) active_brake_duty = current_brake_amount;
                                 if (active_brake_duty > 2000) active_brake_duty = 2000;
-                                brake_apply_timer = 4; // Reset timer to evaluate again in 4ms
+                                brake_apply_timer = 8; // Re-evaluate in next 8ms
                             }
                         }
                     }
@@ -1782,7 +1784,7 @@ void tenKhzRoutine()
                     abs_hold_counter = 0;
                     brake_apply_timer = 0;
                     active_brake_duty = 0;
-                    for (int i = 0; i < 4; i++) {
+                    for (int i = 0; i < 16; i++) {
                         rpm_history[i] = 0;
                     }
                 }
