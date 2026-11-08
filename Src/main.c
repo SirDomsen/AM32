@@ -1092,6 +1092,9 @@ void setInput()
                     }
                 } else if (newinput < (1000 - db)) {
                     // Reverse throttle / brake applied
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
                     if (!car_reverse_active) {
                         // Currently in forward:
                         if (running || !return_to_center) {
@@ -1198,6 +1201,9 @@ void setInput()
                     }
                 } else if (newinput <= 1047 && newinput > 47) {
                     // Reverse throttle / brake applied
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
                     if (!car_reverse_active) {
                         if (running || !return_to_center) {
                             adjusted_input = 0;
@@ -1391,6 +1397,9 @@ if (!stepper_sine && armed) {
                 }
                 if (prop_brake_active) {
 #ifndef PWM_ENABLE_BRIDGE
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
                     if (!car_reverse_active) {
                         // Forward driving: reverse stick is proportional LINEAR brake
                         uint16_t brake_amount = 0;
@@ -1409,16 +1418,16 @@ if (!stepper_sine && armed) {
                             brake_amount = 2000;
                         }
 
-                        uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI (1-10)
-                        if (brake_level < 1) brake_level = 1;
-                        if (brake_level > 10) brake_level = 10;
-                        uint32_t max_limit = (uint32_t)brake_level * 200;
 
-                        prop_brake_duty_cycle = (brake_amount * max_limit) / 2000;
+
+
+
+
+                        prop_brake_duty_cycle = 1000 + ((uint32_t)brake_amount * brake_level) / 20;
                     } else {
                         // Reverse driving: ANY forward stick is 100% HARD instant stop!
                         // Bites immediately with 100% full brake (no expo, no soft ramp)
-                        prop_brake_duty_cycle = 2000;
+                        prop_brake_duty_cycle = 1000 + ((uint32_t)1000 * brake_level) / 10;
                     }
 
                     if (prop_brake_duty_cycle >= 1999) {
