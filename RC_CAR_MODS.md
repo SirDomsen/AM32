@@ -96,6 +96,10 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * Solange das Rad durch den Bodenkontakt noch weiter hochbeschleunigt ($d\omega/dt > 0$), bleibt die Bremse geöffnet – egal wie lange das Rad auf glattem Untergrund braucht.
   * Erst wenn die Drehzahl für 4 ms nicht mehr steigt (echtes Geschwindigkeitsplateau erreicht), wird der nächste Bremszyklus eingeleitet.
   * Standstill-Erkennung: Bleibt das Rad für 150 ms ohne jede Beschleunigung unter 1200 RPM, wird Stillstand erkannt und die Haltebremse angezogen.
+* **2.22_13:** **ABS auch am unteren Ende der Bremsrampe:**
+  * Schlupf nahe dem Stillstand löst ABS auch dann aus, wenn das Bremsziel bereits unter 2500 RPM liegt.
+  * Die volle Bremsung bei Bremsziel 0 und die zeitbasierte Vollbremsung nach 150 ms ohne messbare Raddrehung wurden entfernt; ohne erfassbaren Wiedergriff bleibt die Bremse offen.
+  * Die Wiederbremsung erfolgt nach einem messbaren Drehzahlplateau ab 600 RPM statt 1200 RPM.
 
 ---
 

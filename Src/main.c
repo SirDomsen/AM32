@@ -320,7 +320,6 @@ uint16_t current_brake_amount = 0;
 uint8_t abs_state = 0;
 uint32_t abs_peak_rpm = 0;
 uint16_t abs_hold_counter = 0;
-uint16_t abs_release_timer = 0;
 uint32_t last_actual_rpm = 0;
 uint16_t ledcounter = 0;
 uint16_t ramp_count;
@@ -1662,6 +1661,7 @@ void tenKhzRoutine()
                         prop_brake_duty_cycle = 2000;
                         fullBrake();
                         brake_ramp_active = 0;
+                        brake_target_rpm = 0;
                         abs_state = 0;
                     } else {
                         // 0% - 89% Stick: INTELLIGENT ABS WITH CLOSED-LOOP DECELERATION TRACKING
@@ -1701,7 +1701,6 @@ void tenKhzRoutine()
                             // ABS_RELEASE: Brake 100% open (allOff), monitor wheel re-acceleration from road!
                             prop_brake_duty_cycle = 0;
                             allOff();
-                            abs_release_timer++;
 
                             if (actual_rpm > abs_peak_rpm) {
                                 abs_peak_rpm = actual_rpm;
@@ -1713,16 +1712,11 @@ void tenKhzRoutine()
                             // Re-grip criteria:
                             // ONLY re-apply brake when wheel has stopped accelerating (reached speed plateau)!
                             // No artificial 60ms time cut-off while wheel is recovering!
-                            if (abs_peak_rpm > 1200 && abs_hold_counter >= 4) {
+                            if (abs_peak_rpm > 600 && abs_hold_counter >= 4) {
                                 // Plateau reached: wheel has caught ground speed!
                                 abs_state = 0;
                                 brake_target_rpm = abs_peak_rpm > actual_rpm ? abs_peak_rpm : actual_rpm;
                                 prop_brake_duty_cycle = (current_brake_amount * 400) / 1800; // gentle re-entry stroke
-                            } else if (abs_peak_rpm <= 1200 && abs_hold_counter >= 150) {
-                                // Standstill detection: wheel never spun up and stayed dead for 150ms -> car stopped
-                                abs_state = 0;
-                                brake_target_rpm = 0;
-                                prop_brake_duty_cycle = 2000;
                             }
                         } else {
                             // NORMAL BRAKING: Linear deceleration ramp tracking & lockup detection
@@ -1736,7 +1730,7 @@ void tenKhzRoutine()
                             // Triggers when braking from speed (> 2500 RPM target) and:
                             // 1. Wheel slip: actual RPM drops > 2500 RPM below target ramp
                             // 2. Commutation stall: zero crossing overdue by > 3x expected interval and > 2ms elapsed
-                            // 3. Wheel near stop (actual RPM < 1200)
+                            // 3. Wheel near stop under braking (including the low-speed end of the ramp)
                             uint8_t lockup = 0;
                             if (brake_target_rpm > 2500) {
                                 if (actual_rpm + 2500 < brake_target_rpm) {
@@ -1745,9 +1739,9 @@ void tenKhzRoutine()
                                 if (commutation_interval > 0 && INTERVAL_TIMER_COUNT > (commutation_interval * 3) && INTERVAL_TIMER_COUNT > 4000) {
                                     lockup = 1;
                                 }
-                                if (actual_rpm < 1200) {
-                                    lockup = 1;
-                                }
+                            }
+                            if (prop_brake_duty_cycle > 0 && actual_rpm < 1200) {
+                                lockup = 1;
                             }
 
                             if (lockup) {
@@ -1755,7 +1749,6 @@ void tenKhzRoutine()
                                 abs_state = 1;
                                 abs_peak_rpm = actual_rpm;
                                 abs_hold_counter = 0;
-                                abs_release_timer = 0;
                                 prop_brake_duty_cycle = 0;
                                 allOff();
                                 // Keep comparator active to track BEMF re-acceleration
@@ -1778,11 +1771,6 @@ void tenKhzRoutine()
 
                                 int32_t new_duty = (int32_t)prop_brake_duty_cycle + duty_adjust;
 
-                                // When target reaches 0 and motor is slowing to a stop, ensure 100% full short-circuit
-                                if (brake_target_rpm == 0 && actual_rpm < 2000) {
-                                    new_duty = 2000;
-                                }
-
                                 if (new_duty > 2000) new_duty = 2000;
                                 if (new_duty < 0) new_duty = 0;
                                 prop_brake_duty_cycle = (uint16_t)new_duty;
@@ -1804,7 +1792,6 @@ void tenKhzRoutine()
                     abs_state = 0;
                     abs_peak_rpm = 0;
                     abs_hold_counter = 0;
-                    abs_release_timer = 0;
                 }
             }
         }
