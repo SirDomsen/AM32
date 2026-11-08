@@ -80,6 +80,11 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **2.22_5:** Behebung des AM32 `map()`-Bugs bei umgekehrten Zahlenbereichen; direkte Hebel-Dreisatzberechnung.
 * **2.22_6:** Vollständige Entfernung aller künstlichen Brems-Zeitverzögerungen/Rampen; 100 % Sofort-Biss beim Wenden aus Rückwärtsfahrt.
 * **2.22_7:** Einführung des **geschlossenen 1-kHz-Verzögerungsregelkreises mit Anti-Lock (ABS)** und Kalibrierung über `Brake strength` (3 bis 30 RPM/ms).
+* **2.22_8:** Implementierung der dynamischen Re-Grip ABS State-Machine mit Freilauf-Plateau-Erkennung.
+* **2.22_9:** **Low-Grip & Stall-Erkennung Bugfix:**
+  * **Echtzeit-Stall-Erkennung:** Erkennung überfälliger Kommutierungen via `INTERVAL_TIMER_COUNT` (1–2 ms Reaktionszeit statt 22,5 ms Blindheit).
+  * **Behebung des Anti-Windup-Clamps:** Das Deckeln von `brake_target_rpm` nach unten wurde entfernt, sodass echter Radschlupf ($v_{\text{Fahrzeug}} - v_{\text{Rad}}$) auf rutschigem Untergrund zuverlässig ABS auslöst.
+  * **BEMF-Interrupt-Wächter im Freilauf:** Verhinderung des Einschlafens von AM32 (`running = 0`, `maskPhaseInterrupts`) bei Bremsungen aus Fahrt, sodass die BEMF des wieder anrollenden Rades auch auf glattestem Untergrund sofort erfasst wird.
 
 ---
 
