@@ -1711,13 +1711,18 @@ void tenKhzRoutine()
                             }
 
                             // Re-grip criteria:
-                            // Wheel spun up (> 1200 RPM) AND stopped accelerating for 3ms (reached road speed plateau!)
-                            // OR safety timeout of 60ms
-                            if ((abs_peak_rpm > 1200 && abs_hold_counter >= 3) || abs_release_timer >= 60) {
-                                // Re-grip complete! Restart brake cycle from newly acquired road speed
+                            // ONLY re-apply brake when wheel has stopped accelerating (reached speed plateau)!
+                            // No artificial 60ms time cut-off while wheel is recovering!
+                            if (abs_peak_rpm > 1200 && abs_hold_counter >= 4) {
+                                // Plateau reached: wheel has caught ground speed!
                                 abs_state = 0;
                                 brake_target_rpm = abs_peak_rpm > actual_rpm ? abs_peak_rpm : actual_rpm;
                                 prop_brake_duty_cycle = (current_brake_amount * 400) / 1800; // gentle re-entry stroke
+                            } else if (abs_peak_rpm <= 1200 && abs_hold_counter >= 150) {
+                                // Standstill detection: wheel never spun up and stayed dead for 150ms -> car stopped
+                                abs_state = 0;
+                                brake_target_rpm = 0;
+                                prop_brake_duty_cycle = 2000;
                             }
                         } else {
                             // NORMAL BRAKING: Linear deceleration ramp tracking & lockup detection

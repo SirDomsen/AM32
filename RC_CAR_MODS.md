@@ -91,6 +91,11 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **2.22_11:** **Symmetrisches ABS & Handbremse auch beim Bremsen aus Rückwärtsfahrt:**
   * Auch beim Abbremsen aus schneller Rückwärtsfahrt (Vorwärts-Gashebel) greift von 0 % bis 89 % das geschlossene ABS, und ab 90 % Hebel die 100 % Vollbremse.
   * Beim Erreichen des Stillstands schaltet der Regler weiterhin ohne Umschaltverzögerung direkt in Vorwärtsfahrt um.
+* **2.22_12:** **Reines Plateau-Re-Grip (Entfernung des starren 60-ms-Timeouts):**
+  * Das künstliche 60-ms-Zeitlimit im Freilauf wurde entfernt.
+  * Solange das Rad durch den Bodenkontakt noch weiter hochbeschleunigt ($d\omega/dt > 0$), bleibt die Bremse geöffnet – egal wie lange das Rad auf glattem Untergrund braucht.
+  * Erst wenn die Drehzahl für 4 ms nicht mehr steigt (echtes Geschwindigkeitsplateau erreicht), wird der nächste Bremszyklus eingeleitet.
+  * Standstill-Erkennung: Bleibt das Rad für 150 ms ohne jede Beschleunigung unter 1200 RPM, wird Stillstand erkannt und die Haltebremse angezogen.
 
 ---
 
