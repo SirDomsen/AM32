@@ -11,26 +11,19 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **Neu:** Während der Fahrt (sowohl vorwärts als auch rückwärts) bleibt die Low-Side-PWM aus (`temp_comp_pwm = 0`). 
 * **Effekt:** Das Auto rollt beim Gaswegnehmen weich und frei auf die neue Geschwindigkeit bzw. zum Stillstand aus (Dioden-Freilauf).
 
-### 2. Einstellbare Betriebsbremskraft (`Brake strength`) mit Highspeed-Snapshot & Expo
+### 2. Einstellbare Betriebsbremskraft (`Brake strength`) - Linear & Rampenfrei (Release 2.22_6)
 * **Steuerung:** Über den Schieberegler **`Brake strength`** (im Code `drag_brake_strength`, Werte 1 bis 10) im Configurator.
 * **Skalierung:**
   * **Stufe 1:** 10 % maximale Bremskraft (sehr sanftes Abbremsen, schont Micro-Getriebe)
   * **Stufe 5:** 50 %
   * **Stufe 8:** 80 %
   * **Stufe 10:** 100 % (volle Phasenkurzschluss-Bremse `fullBrake()`, absolut identisch zur maximalen Hardware-Bremsleistung des Original-AM32)
-* **Intelligente Highspeed-Snapshot-Dämpfung mit blitzschnellem 100-ms-Blend-In & Notanker:**
-  * **Einsatz:** Im Moment des Tretens auf die Bremse nimmt die Firmware einen Schnappschuss der aktuellen Drehzahl (`average_interval`).
-  * **Highspeed (z. B. 50 km/h, < 150 µs):** Dämpft die Bremskraft initial auf 35 %, um die extreme Back-EMF-Spitze und blockierende Hinterräder bei entlasteter Hinterachse komplett zu eliminieren.
-  * **Schneckentempo (> 1000 µs):** Volle 100 % Bremskraft ab der ersten Millisekunde.
-  * **1-kHz-Blend-In in nur ~100 ms:** Über ca. 100 ms (genau die 2–3 Radumdrehungen des Front-Eintauchens) klettert die Dämpfung stufenlos auf 100 %. So bleibt das Auto stabil, baut aber sofort messerscharfe Verzögerung auf.
-  * **Panik-Notanker ab 85 % Hebelweg:** Zieht man den Bremshebel über 85 % durch, wird jede Dämpfung sofort umgangen $\rightarrow$ 100 % sofortige Vollbremsung!
-* **30 % Progressive Expo-Kennlinie (RC-Sender-Standard für Vorwärts-Bremse):**
-  * Verwendet eine kubische Mischung (70 % linear + 30 % kubisch) auf dem Hebelweg nach hinten.
-  * **0 bis 40 % Hebelweg:** Extrem feinfühlige Bremswirkung (nur ~14–30 % Kraft). Erlaubt feinstes Anbremsen ohne Heckausbruch auf 2WD-Chassis.
-  * **Ab 70 % Hebelweg:** Zügiger Anstieg auf das über den Slider gewählte Maximum für Notbremsungen.
-  * **Präzise Hebelauflösung (Release 2.22_5):** Direkte Dreisatz-Modulation ohne fehlerhaften `map()`-Rücksturz. Der Bremsweg skaliert nun absolut sauber und linear/progressiv von 0 bis 2000.
-* **Knackige Wende bei Rückwärtsfahrt (Rückwärts $\rightarrow$ Vorwärts):**
-  * Beim Bremsen aus Rückwärtsfahrt (Hebel nach vorne) greift keine Expo-Dämpfung: Der Motor stoppt sofort und schießt ohne Verzögerung vorwärts los.
+* **Direktes, lineares Ansprechverhalten ohne Rampen (Instant Response):**
+  * **100 % rampenfrei:** Keine künstlichen Zeitfilter, kein verzögerndes Blend-In – der Bremsbefehl liegt exakt und ohne Millisekunden-Verlust an den FETs an.
+  * **Direkt & linear:** Kein flaches Expo mehr, das die Bremse bei Langsamfahrt wirkungslos macht. Bereits ab den ersten Prozenten Hebelweg baut die Bremse verlässlich spürbare Verzögerung auf.
+* **Brutale 100 % Rückwärts-Bremse (Knackige Wende Rückwärts $\rightarrow$ Vorwärts):**
+  * Beim Bremsen aus Rückwärtsfahrt (Antippen von Gas nach vorne) greift **sofort und kompromisslos 100 % Vollbremsung (`fullBrake()`)**.
+  * Da man aus Rückwärtsfahrt ohnehin nur leicht Gas antippt, stoppt der Motor die Rückwärtsdrehung augenblicklich und schießt ohne Verzögerung vorwärts los.
 
 ### 3. Einstellbare Rückfahrgeschwindigkeit (`Running brake level`)
 * **Steuerung:** Über den Schieberegler **`Running brake level`** (im Code `driving_brake_strength`, Werte 1 bis 10) im Configurator.

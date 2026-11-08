@@ -313,9 +313,6 @@ volatile uint8_t max_ramp_high_rpm = RAMP_SPEED_HIGH_RPM;
 char send_esc_info_flag;
 uint32_t eeprom_address = EEPROM_START_ADD; 
 uint16_t prop_brake_duty_cycle = 0;
-uint16_t base_brake_duty_cycle = 0;
-uint16_t brake_speed_scale = 100;
-uint16_t brake_ramp_timer = 0;
 uint8_t car_reverse_active = 0;
 uint16_t ledcounter = 0;
 uint16_t ramp_count;
@@ -1072,16 +1069,12 @@ void setInput()
                             // Motor still rotating backward: brake to standstill!
                             adjusted_input = 0;
                             prop_brake_active = 1;
-                            brake_speed_scale = 100; // Immediate full power to stop reverse
-                            brake_ramp_timer = 0;
                             return_to_center = 0;
                         } else {
                             // Motor stopped (0 RPM): immediate transition to forward!
                             car_reverse_active = 0;
                             forward = 1 - eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
-                            brake_speed_scale = 100;
-                            brake_ramp_timer = 0;
                             return_to_center = 0;
                             zero_crosses = 0;
                             old_routine = 1;
@@ -1094,8 +1087,6 @@ void setInput()
                         car_reverse_active = 0;
                         forward = 1 - eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
-                        brake_speed_scale = 100;
-                        brake_ramp_timer = 0;
                         return_to_center = 0;
                         adjusted_input = map(newinput, 1000 + db, 2000, 47, 2047);
                     }
@@ -1106,29 +1097,12 @@ void setInput()
                         if (running || !return_to_center) {
                             // Motor still rotating forward OR double-tap not armed: brake!
                             adjusted_input = 0;
-                            if (!prop_brake_active) {
-                                // Snapshot speed at moment of brake application:
-                                if (running && average_interval > 0) {
-                                    if (average_interval < 150) {
-                                        brake_speed_scale = 35; // High speed: attenuate initial brake
-                                    } else if (average_interval < 1000) {
-                                        brake_speed_scale = map(average_interval, 150, 1000, 35, 100);
-                                    } else {
-                                        brake_speed_scale = 100; // Low speed: 100% full brake
-                                    }
-                                } else {
-                                    brake_speed_scale = 100;
-                                }
-                                brake_ramp_timer = 0;
-                            }
                             prop_brake_active = 1;
                         } else {
                             // Motor stopped AND return_to_center == 1: engage reverse!
                             car_reverse_active = 1;
                             forward = eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
-                            brake_speed_scale = 100;
-                            brake_ramp_timer = 0;
                             zero_crosses = 0;
                             old_routine = 1;
                             maskPhaseInterrupts();
@@ -1143,8 +1117,6 @@ void setInput()
                         // Already in reverse mode: drive reverse
                         forward = eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
-                        brake_speed_scale = 100;
-                        brake_ramp_timer = 0;
                         uint8_t rev_level = eepromBuffer.driving_brake_strength; // "Running brake level" in GUI
                         if (rev_level < 1) rev_level = 1;
                         if (rev_level > 10) rev_level = 10;
@@ -1155,8 +1127,6 @@ void setInput()
                     // Neutral throttle
                     adjusted_input = 0;
                     prop_brake_active = 0;
-                    brake_speed_scale = 100;
-                    brake_ramp_timer = 0;
                     if (!running) {
                         return_to_center = 1; // arm reverse only when stopped at neutral
                     } else {
@@ -1207,15 +1177,11 @@ void setInput()
                         if (running) {
                             adjusted_input = 0;
                             prop_brake_active = 1;
-                            brake_speed_scale = 100;
-                            brake_ramp_timer = 0;
                             return_to_center = 0;
                         } else {
                             car_reverse_active = 0;
                             forward = 1 - eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
-                            brake_speed_scale = 100;
-                            brake_ramp_timer = 0;
                             return_to_center = 0;
                             zero_crosses = 0;
                             old_routine = 1;
@@ -1227,8 +1193,6 @@ void setInput()
                         car_reverse_active = 0;
                         forward = 1 - eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
-                        brake_speed_scale = 100;
-                        brake_ramp_timer = 0;
                         return_to_center = 0;
                         adjusted_input = ((newinput - 1048) * 2 + 47) - reversing_dead_band;
                     }
@@ -1237,27 +1201,11 @@ void setInput()
                     if (!car_reverse_active) {
                         if (running || !return_to_center) {
                             adjusted_input = 0;
-                            if (!prop_brake_active) {
-                                if (running && average_interval > 0) {
-                                    if (average_interval < 150) {
-                                        brake_speed_scale = 35;
-                                    } else if (average_interval < 1000) {
-                                        brake_speed_scale = map(average_interval, 150, 1000, 35, 100);
-                                    } else {
-                                        brake_speed_scale = 100;
-                                    }
-                                } else {
-                                    brake_speed_scale = 100;
-                                }
-                                brake_ramp_timer = 0;
-                            }
                             prop_brake_active = 1;
                         } else {
                             car_reverse_active = 1;
                             forward = eepromBuffer.dir_reversed;
                             prop_brake_active = 0;
-                            brake_speed_scale = 100;
-                            brake_ramp_timer = 0;
                             zero_crosses = 0;
                             old_routine = 1;
                             maskPhaseInterrupts();
@@ -1271,8 +1219,6 @@ void setInput()
                     } else {
                         forward = eepromBuffer.dir_reversed;
                         prop_brake_active = 0;
-                        brake_speed_scale = 100;
-                        brake_ramp_timer = 0;
                         uint8_t rev_level = eepromBuffer.driving_brake_strength; // "Running brake level" in GUI
                         if (rev_level < 1) rev_level = 1;
                         if (rev_level > 10) rev_level = 10;
@@ -1283,8 +1229,6 @@ void setInput()
                     // Neutral throttle (< 48)
                     adjusted_input = 0;
                     prop_brake_active = 0;
-                    brake_speed_scale = 100;
-                    brake_ramp_timer = 0;
                     if (!running) {
                         return_to_center = 1;
                     } else {
@@ -1447,60 +1391,34 @@ if (!stepper_sine && armed) {
                 }
                 if (prop_brake_active) {
 #ifndef PWM_ENABLE_BRIDGE
-                    uint16_t brake_amount = 0;
-                    if (dshot == 0) {
-                        uint16_t db = servo_dead_band << 1;
-                        if (!car_reverse_active) {
-                            // Forward driving: reverse input (< 1000 - db) is brake
+                    if (!car_reverse_active) {
+                        // Forward driving: reverse stick is proportional LINEAR brake
+                        uint16_t brake_amount = 0;
+                        if (dshot == 0) {
+                            uint16_t db = servo_dead_band << 1;
                             uint16_t max_range = 1000 - db;
                             if (newinput < max_range) {
                                 brake_amount = ((uint32_t)(max_range - newinput) * 2000) / max_range;
                             }
                         } else {
-                            // Reverse driving: forward input (> 1000 + db) is brake
-                            uint16_t min_range = 1000 + db;
-                            if (newinput > min_range && min_range < 2000) {
-                                brake_amount = ((uint32_t)(newinput - min_range) * 2000) / (2000 - min_range);
-                            }
-                        }
-                    } else {
-                        if (!car_reverse_active) {
-                            // Forward driving: reverse dshot (48..1047) is brake
                             if (newinput <= 1047 && newinput > 47) {
                                 brake_amount = ((uint32_t)(1047 - newinput) * 2000) / (1047 - 48);
                             }
-                        } else {
-                            // Reverse driving: forward dshot (> 1047) is brake
-                            if (newinput > 1047) {
-                                brake_amount = ((uint32_t)(newinput - 1048) * 2000) / (2047 - 1048);
-                            }
                         }
-                    }
-                    if (brake_amount > 2000) {
-                        brake_amount = 2000;
-                    }
-
-                    // Apply 30% Cubic Expo and snapshot speed scaling ONLY when braking from forward drive!
-                    if (!car_reverse_active) {
-                        if (brake_amount >= 1700) {
-                            // > 85% stick: Panic brake / Notanker! Immediate 100% authority, bypass speed attenuation
-                            brake_speed_scale = 100;
-                        } else {
-                            uint32_t cubic_brake = (((uint32_t)brake_amount * brake_amount / 2000) * brake_amount) / 2000;
-                            brake_amount = (uint16_t)(((uint32_t)brake_amount * 70 + cubic_brake * 30) / 100);
+                        if (brake_amount > 2000) {
+                            brake_amount = 2000;
                         }
-                    }
 
-                    uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI (1-10)
-                    if (brake_level < 1) brake_level = 1;
-                    if (brake_level > 10) brake_level = 10;
-                    uint32_t max_limit = (uint32_t)brake_level * 200;
+                        uint8_t brake_level = eepromBuffer.drag_brake_strength; // "Brake strength" in GUI (1-10)
+                        if (brake_level < 1) brake_level = 1;
+                        if (brake_level > 10) brake_level = 10;
+                        uint32_t max_limit = (uint32_t)brake_level * 200;
 
-                    base_brake_duty_cycle = (brake_amount * max_limit) / 2000;
-                    if (!car_reverse_active && brake_speed_scale < 100) {
-                        prop_brake_duty_cycle = (base_brake_duty_cycle * brake_speed_scale) / 100;
+                        prop_brake_duty_cycle = (brake_amount * max_limit) / 2000;
                     } else {
-                        prop_brake_duty_cycle = base_brake_duty_cycle;
+                        // Reverse driving: ANY forward stick is 100% HARD instant stop!
+                        // Bites immediately with 100% full brake (no expo, no soft ramp)
+                        prop_brake_duty_cycle = 2000;
                     }
 
                     if (prop_brake_duty_cycle >= 1999) {
@@ -1513,7 +1431,6 @@ if (!stepper_sine && armed) {
 #endif
                 } else {
                     prop_brake_duty_cycle = 0;
-                    base_brake_duty_cycle = 0;
                 }
             } else if (!eepromBuffer.comp_pwm) {
                 duty_cycle_setpoint = 0;
@@ -1724,29 +1641,6 @@ void tenKhzRoutine()
                 }
                 if (zero_crosses < 100) {
                     speedPid.integral = 0;
-                }
-            }
-            if (eepromBuffer.rc_car_reverse) {
-                if (prop_brake_active && !car_reverse_active) {
-                    if (brake_speed_scale < 100) {
-                        brake_ramp_timer++;
-                        if (brake_ramp_timer >= 30) { // ~100ms total blend from 35% to 100% (+2% every 3ms at 10kHz)
-                            brake_ramp_timer = 0;
-                            brake_speed_scale += 2;
-                            if (brake_speed_scale > 100) {
-                                brake_speed_scale = 100;
-                            }
-                            prop_brake_duty_cycle = (base_brake_duty_cycle * brake_speed_scale) / 100;
-                            if (prop_brake_duty_cycle >= 1999) {
-                                fullBrake();
-                            } else if (prop_brake_duty_cycle > 0) {
-                                proportionalBrake();
-                            }
-                        }
-                    }
-                } else {
-                    brake_ramp_timer = 0;
-                    brake_speed_scale = 100;
                 }
             }
         }
