@@ -1708,17 +1708,14 @@ void tenKhzRoutine()
 
                     if (abs_state == 1) {
                         // ==========================================
-                        // ABS_RELEASE: Brake 100% OPEN (Freilauf)
-                        // Option A: Sofortiger Wiederantritt bei Drehzahlanstieg (ohne Plateau!)
+                        // ABS_RELEASE: Brake 100% OPEN (Freilauf) for exactly 4ms!
                         // ==========================================
                         prop_brake_duty_cycle = 0;
                         allOff();
                         abs_release_timer++;
 
-                        if (actual_rpm < abs_min_rpm) {
-                            abs_min_rpm = actual_rpm;
-                        } else if (actual_rpm > abs_min_rpm + 50) {
-                            // Wheel bottomed out and is rising! Immediately resume braking at 32%!
+                        // Exactly 4ms freewheel pulse so wheel unsticks -> immediately resume braking at 32%!
+                        if (abs_release_timer >= 4) {
                             abs_state = 0;
                             brake_step = 1; // 32%
                             active_brake_duty = ((uint32_t)current_brake_amount * 32) / 100;
@@ -1733,12 +1730,6 @@ void tenKhzRoutine()
                             } else {
                                 proportionalBrake();
                             }
-                        } else if (abs_release_timer > 100) {
-                            // Standstill timeout (car stationary): hold brake!
-                            abs_state = 0;
-                            brake_step = 4;
-                            active_brake_duty = current_brake_amount;
-                            brake_apply_timer = 0;
                         }
                     } else {
                         // ==========================================
@@ -1795,7 +1786,7 @@ void tenKhzRoutine()
                             } else if (brake_step == 3) {
                                 brake_step = 4;
                                 active_brake_duty = current_brake_amount; // 100%
-                                brake_apply_timer = 0;
+                                // Do not reset brake_apply_timer at 100%: keep slip detection active every ms!
                             }
                         }
                     }

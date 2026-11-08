@@ -117,6 +117,11 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * Sofort-Wende aus Rückwärtsbremsung bei 0 RPM ohne Gashebel-Release.
 * **2.22_17:** **16-ms-Gleitfenster & 32 RPM/ms Maximalverzögerung:**
   * 16-ms Ringpuffer zur Eliminierung des Quantisierungsrauschens bei niedrigen Drehzahlen.
+* **2.22_21:** **Deterministischer 4-ms-Freilaufpuls:**
+  * **Problem behoben:** In 2.22_20 wartete der Freilauf bei sensorlos nicht messbarem Drehzahlanstieg bis zu 100 ms Timeout (Auto rollte 100 ms ungebremst -> „bremst nur manchmal“).
+  * **Lösung:** Der Freilauf ist nun ein präziser, ultrakurzer Impuls von exakt **4 ms**, um das Rad aus der Blockade zu lösen.
+  * Nach 4 ms greift die Bremse garantiert sofort bei **32 %** und steppt alle 8 ms hoch (64 % -> 96 % -> 100 %).
+  * Bei 100 % bleibt die Schlupferkennung durchgehend in jedem Millisekunden-Takt aktiv.
 * **2.22_20:** **Stufen-ABS ohne Plateau (32 % -> 64 % -> 96 % alle 8 ms):**
   * **Kein Warten auf Plateau:** Bei Blockade öffnet die Bremse kurz; sobald das Rad den Tiefpunkt durchschritten hat und wieder ansteigt (`actual_rpm > abs_min_rpm + 50`), greift die Bremse augenblicklich wieder.
   * **Stufen-Rampe alle 8 ms:**
