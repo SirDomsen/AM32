@@ -315,6 +315,7 @@ uint32_t eeprom_address = EEPROM_START_ADD;
 uint16_t prop_brake_duty_cycle = 0;
 uint8_t car_reverse_active = 0;
 uint16_t current_brake_amount = 0;
+uint16_t active_brake_duty = 0;
 uint8_t abs_state = 0;
 uint32_t abs_peak_rpm = 0;
 uint16_t abs_hold_counter = 0;
@@ -1667,6 +1668,12 @@ void tenKhzRoutine()
                         target_decel = 1;
                     }
 
+                    // Initialize active_brake_duty on fresh brake application (starts gentle at 25% of stick)
+                    if (active_brake_duty == 0) {
+                        active_brake_duty = (current_brake_amount * 500) / 2000;
+                        if (active_brake_duty < 100) active_brake_duty = 100;
+                    }
+
                     // 1. Get instantaneous RPM (with real-time decay if commutation is overdue)
                     uint32_t actual_rpm = 0;
                     if (running && e_com_time > 0) {
@@ -1677,6 +1684,14 @@ void tenKhzRoutine()
                                 actual_rpm = instant_rpm;
                             }
                         }
+                    }
+
+                    // Instant turnaround from reverse: if motor reached 0 RPM under forward brake, switch to forward drive!
+                    if (car_reverse_active && actual_rpm == 0 && brake_apply_timer >= 4) {
+                        running = 0;
+                        prop_brake_active = 0;
+                        car_reverse_active = 0;
+                        active_brake_duty = 0;
                     }
 
                     if (abs_state == 1) {
@@ -1701,16 +1716,25 @@ void tenKhzRoutine()
                                 rpm_history[i] = actual_rpm;
                             }
                             brake_apply_timer = 0;
-                            prop_brake_duty_cycle = 2000;
-                            fullBrake();
+                            prop_brake_duty_cycle = active_brake_duty;
+                            if (prop_brake_duty_cycle >= 1990) {
+                                fullBrake();
+                            } else {
+                                proportionalBrake();
+                            }
                         }
                     } else {
                         // ==========================================
-                        // ABS_BRAKE: Brake 100% CLOSED (fullBrake)
-                        // Measure deceleration: if decel > target_decel -> DUMP BRAKE!
+                        // ABS_BRAKE: Apply active_brake_duty
                         // ==========================================
-                        prop_brake_duty_cycle = 2000;
-                        fullBrake();
+                        prop_brake_duty_cycle = active_brake_duty;
+                        if (prop_brake_duty_cycle >= 1990) {
+                            fullBrake();
+                        } else if (prop_brake_duty_cycle > 0) {
+                            proportionalBrake();
+                        } else {
+                            allOff();
+                        }
 
                         // Update 4ms rolling window for deceleration measurement
                         rpm_history[history_idx] = actual_rpm;
@@ -1725,20 +1749,29 @@ void tenKhzRoutine()
 
                         brake_apply_timer++;
 
-                        // Check if wheel is breaking traction (decelerating faster than driver requested)
-                        // Or if wheel has stopped dead while it was previously spinning
+                        // 1. Slip detection: deceleration too fast -> REDUCE FORCE (x 0.3) and OPEN BRAKE!
                         if (brake_apply_timer >= 3) {
                             if (measured_decel > (int32_t)target_decel || (actual_rpm == 0 && oldest_rpm > 500)) {
-                                // Slip detected! Open brake immediately!
+                                active_brake_duty = (active_brake_duty * 3) / 10; // Reduce force by 70%!
+                                if (active_brake_duty < 60) active_brake_duty = 60;
                                 abs_state = 1;
                                 abs_peak_rpm = actual_rpm;
                                 abs_hold_counter = 0;
                                 prop_brake_duty_cycle = 0;
                                 allOff();
-                                // Keep comparator armed for BEMF capture during freewheel
                                 running = 1;
                                 old_routine = 0;
                                 enableCompInterrupts();
+                            }
+                        }
+
+                        // 2. Under-braking detection: deceleration too slow -> INCREASE FORCE (x 1.3)!
+                        if (abs_state == 0 && brake_apply_timer >= 8) {
+                            if (measured_decel < (int32_t)((target_decel * 7) / 10)) {
+                                active_brake_duty = (active_brake_duty * 13) / 10; // Increase force by 30%!
+                                if (active_brake_duty > current_brake_amount) active_brake_duty = current_brake_amount;
+                                if (active_brake_duty > 2000) active_brake_duty = 2000;
+                                brake_apply_timer = 4; // Reset timer to evaluate again in 4ms
                             }
                         }
                     }
@@ -1748,6 +1781,7 @@ void tenKhzRoutine()
                     abs_peak_rpm = 0;
                     abs_hold_counter = 0;
                     brake_apply_timer = 0;
+                    active_brake_duty = 0;
                     for (int i = 0; i < 4; i++) {
                         rpm_history[i] = 0;
                     }
