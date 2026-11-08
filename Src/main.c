@@ -1131,6 +1131,7 @@ void setInput()
                     adjusted_input = 0;
                     prop_brake_active = 0;
                     if (!running) {
+                        car_reverse_active = 0; // Reset reverse mode when stopped at neutral!
                         return_to_center = 1; // arm reverse only when stopped at neutral
                     } else {
                         return_to_center = 0;
@@ -1358,9 +1359,7 @@ if (!stepper_sine && armed) {
                 duty_cycle_setpoint = map(input, 47, 2047, minimum_duty_cycle, 2000);
             }
 
-            if (!eepromBuffer.rc_car_reverse) {
-                prop_brake_active = 0;
-            }
+            prop_brake_active = 0;
         }
 
         if (input < 47 + (80 * eepromBuffer.use_sine_start)) {
@@ -1423,14 +1422,15 @@ if (!stepper_sine && armed) {
 
 
 
-                        prop_brake_duty_cycle = 1000 + ((uint32_t)brake_amount * brake_level) / 20;
+                        // Scale maximum brake power linearly by GUI "Brake strength" slider (1=10%, 10=100%)
+                        uint32_t max_limit = (uint32_t)brake_level * 200;
+                        prop_brake_duty_cycle = ((uint32_t)brake_amount * max_limit) / 2000;
                     } else {
                         // Reverse driving: ANY forward stick is 100% HARD instant stop!
-                        // Bites immediately with 100% full brake (no expo, no soft ramp)
-                        prop_brake_duty_cycle = 1000 + ((uint32_t)1000 * brake_level) / 10;
+                        prop_brake_duty_cycle = 2000;
                     }
 
-                    if (prop_brake_duty_cycle >= 1999) {
+                    if (prop_brake_duty_cycle >= 1990) {
                         fullBrake();
                     } else if (prop_brake_duty_cycle > 0) {
                         proportionalBrake();
@@ -1689,7 +1689,7 @@ void tenKhzRoutine()
             }
 
         if (prop_brake_active) {
-            adjusted_duty_cycle = tim1_arr - ((prop_brake_duty_cycle * tim1_arr) / 2000);
+            adjusted_duty_cycle = ((uint32_t)prop_brake_duty_cycle * tim1_arr) / 2000;
         } else if ((armed && running) && input > 47) {
             if (eepromBuffer.rc_car_reverse) {
                 temp_comp_pwm = 0; // Freewheeling (no damped light) while driving in car mode
