@@ -1764,7 +1764,7 @@ void tenKhzRoutine()
                         // Evaluated after 4ms
                         if (brake_apply_timer >= 4) {
                             if (measured_decel > (int32_t)target_decel || (actual_rpm == 0 && oldest_rpm > 500)) {
-                                active_brake_duty = (active_brake_duty * 3) / 10; // Reduce force by 70%!
+                                active_brake_duty = (active_brake_duty * 7) / 10; // Reduce force by 30%!
                                 if (active_brake_duty < 40) active_brake_duty = 40;
                                 abs_state = 1;
                                 abs_peak_rpm = actual_rpm;

@@ -117,6 +117,10 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * Sofort-Wende aus Rückwärtsbremsung bei 0 RPM ohne Gashebel-Release.
 * **2.22_17:** **16-ms-Gleitfenster & 32 RPM/ms Maximalverzögerung:**
   * 16-ms Ringpuffer zur Eliminierung des Quantisierungsrauschens bei niedrigen Drehzahlen.
+* **2.22_19:** **Symmetrische Bremskraftanpassung (±30 %):**
+  * Bei Schlupf/Blockade wird die Bremskraft nur um 30 % reduziert (`active_brake_duty * 0.7`) statt um 70 %, wodurch kein Kraftloch mehr entsteht.
+  * Bei zu geringer Verzögerung wird symmetrisch um 30 % nachgeregelt (`active_brake_duty * 1.3`).
+  * Schnelle und stabile Konvergenz an der maximalen Reibgrenze.
 * **2.22_18:** **100 % Knüppel-Startbiss & 4-ms-Sofortansprache:**
   * Bremsung startet sofort mit 100 % der Knüppelkraft für direkten, verzögerungsfreien Antritt.
   * Puffer wird beim Bremsstart sofort mit der aktuellen Drehzahl initialisiert (kein Blindflug mehr).
