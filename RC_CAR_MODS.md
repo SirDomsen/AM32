@@ -28,6 +28,7 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * Verwendet eine kubische Mischung (70 % linear + 30 % kubisch) auf dem Hebelweg nach hinten.
   * **0 bis 40 % Hebelweg:** Extrem feinfühlige Bremswirkung (nur ~14–30 % Kraft). Erlaubt feinstes Anbremsen ohne Heckausbruch auf 2WD-Chassis.
   * **Ab 70 % Hebelweg:** Zügiger Anstieg auf das über den Slider gewählte Maximum für Notbremsungen.
+  * **Präzise Hebelauflösung (Release 2.22_5):** Direkte Dreisatz-Modulation ohne fehlerhaften `map()`-Rücksturz. Der Bremsweg skaliert nun absolut sauber und linear/progressiv von 0 bis 2000.
 * **Knackige Wende bei Rückwärtsfahrt (Rückwärts $\rightarrow$ Vorwärts):**
   * Beim Bremsen aus Rückwärtsfahrt (Hebel nach vorne) greift keine Expo-Dämpfung: Der Motor stoppt sofort und schießt ohne Verzögerung vorwärts los.
 

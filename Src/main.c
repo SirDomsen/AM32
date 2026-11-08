@@ -1452,27 +1452,32 @@ if (!stepper_sine && armed) {
                         uint16_t db = servo_dead_band << 1;
                         if (!car_reverse_active) {
                             // Forward driving: reverse input (< 1000 - db) is brake
-                            if (newinput < (1000 - db)) {
-                                brake_amount = map(newinput, 1000 - db, 0, 0, 2000);
+                            uint16_t max_range = 1000 - db;
+                            if (newinput < max_range) {
+                                brake_amount = ((uint32_t)(max_range - newinput) * 2000) / max_range;
                             }
                         } else {
                             // Reverse driving: forward input (> 1000 + db) is brake
-                            if (newinput > (1000 + db)) {
-                                brake_amount = map(newinput, 1000 + db, 2000, 0, 2000);
+                            uint16_t min_range = 1000 + db;
+                            if (newinput > min_range && min_range < 2000) {
+                                brake_amount = ((uint32_t)(newinput - min_range) * 2000) / (2000 - min_range);
                             }
                         }
                     } else {
                         if (!car_reverse_active) {
                             // Forward driving: reverse dshot (48..1047) is brake
                             if (newinput <= 1047 && newinput > 47) {
-                                brake_amount = map(newinput, 1047, 48, 0, 2000);
+                                brake_amount = ((uint32_t)(1047 - newinput) * 2000) / (1047 - 48);
                             }
                         } else {
                             // Reverse driving: forward dshot (> 1047) is brake
                             if (newinput > 1047) {
-                                brake_amount = map(newinput, 1048, 2047, 0, 2000);
+                                brake_amount = ((uint32_t)(newinput - 1048) * 2000) / (2047 - 1048);
                             }
                         }
+                    }
+                    if (brake_amount > 2000) {
+                        brake_amount = 2000;
                     }
 
                     // Apply 30% Cubic Expo and snapshot speed scaling ONLY when braking from forward drive!
@@ -1725,7 +1730,7 @@ void tenKhzRoutine()
                 if (prop_brake_active && !car_reverse_active) {
                     if (brake_speed_scale < 100) {
                         brake_ramp_timer++;
-                        if (brake_ramp_timer >= 3) { // ~100ms total blend from 35% to 100% (+2% every 3ms)
+                        if (brake_ramp_timer >= 30) { // ~100ms total blend from 35% to 100% (+2% every 3ms at 10kHz)
                             brake_ramp_timer = 0;
                             brake_speed_scale += 2;
                             if (brake_speed_scale > 100) {
