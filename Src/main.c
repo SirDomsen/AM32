@@ -1399,11 +1399,11 @@ if (!stepper_sine && armed) {
                 }
                 if (prop_brake_active) {
 #ifndef PWM_ENABLE_BRIDGE
+                    uint16_t brake_amount = 0;
+                    uint16_t db = servo_dead_band << 1;
                     if (!car_reverse_active) {
                         // Forward driving: reverse stick sets desired deceleration rate
-                        uint16_t brake_amount = 0;
                         if (dshot == 0) {
-                            uint16_t db = servo_dead_band << 1;
                             uint16_t max_range = 1000 - db;
                             if (newinput < max_range) {
                                 brake_amount = ((uint32_t)(max_range - newinput) * 2000) / max_range;
@@ -1413,23 +1413,29 @@ if (!stepper_sine && armed) {
                                 brake_amount = ((uint32_t)(1047 - newinput) * 2000) / (1047 - 48);
                             }
                         }
-                        if (brake_amount > 2000) {
-                            brake_amount = 2000;
-                        }
-                        current_brake_amount = brake_amount;
-
-                        if (current_brake_amount == 0) {
-                            prop_brake_duty_cycle = 0;
-                            brake_ramp_active = 0;
-                            brake_target_rpm = 0;
-                            allOff();
-                        }
                     } else {
-                        // Reverse driving: ANY forward stick is 100% HARD instant stop!
-                        // Bites immediately with 100% full brake (no expo, no soft ramp)
-                        current_brake_amount = 2000;
-                        prop_brake_duty_cycle = 2000;
-                        fullBrake();
+                        // Reverse driving: forward stick sets desired deceleration rate
+                        if (dshot == 0) {
+                            uint16_t min_range = 1000 + db;
+                            if (newinput > min_range) {
+                                brake_amount = ((uint32_t)(newinput - min_range) * 2000) / (2000 - min_range);
+                            }
+                        } else {
+                            if (newinput >= 1048) {
+                                brake_amount = ((uint32_t)(newinput - 1048) * 2000) / (2047 - 1048);
+                            }
+                        }
+                    }
+                    if (brake_amount > 2000) {
+                        brake_amount = 2000;
+                    }
+                    current_brake_amount = brake_amount;
+
+                    if (current_brake_amount == 0) {
+                        prop_brake_duty_cycle = 0;
+                        brake_ramp_active = 0;
+                        brake_target_rpm = 0;
+                        allOff();
                     }
 #endif
                 } else {
@@ -1650,7 +1656,7 @@ void tenKhzRoutine()
                 }
             }
             if (eepromBuffer.rc_car_reverse) {
-                if (prop_brake_active && !car_reverse_active && current_brake_amount > 0) {
+                if (prop_brake_active && current_brake_amount > 0) {
                     if (current_brake_amount >= 1800) {
                         // >= 90% Stick: HANDBRAKE OVERRIDE (Hard 100% Lockup for Drift Initiation / Emergency Stop)
                         prop_brake_duty_cycle = 2000;

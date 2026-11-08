@@ -88,6 +88,9 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **2.22_10:** **Handbremsen-Override für Drifts & U-Turns:**
   * **0 % bis 89 % Hebel:** Feinfühlige, geschlossene ABS-Verzögerungsregelung (volle 100 % Modulationsbandbreite).
   * **90 % bis 100 % Hebel (Vollanschlag):** ABS-Override mit sofortiger 100 % Vollbremsung (`fullBrake()`) zum gezielten Anstellen des Hecks, Einleiten von Drifts oder Ankerwerfen.
+* **2.22_11:** **Symmetrisches ABS & Handbremse auch beim Bremsen aus Rückwärtsfahrt:**
+  * Auch beim Abbremsen aus schneller Rückwärtsfahrt (Vorwärts-Gashebel) greift von 0 % bis 89 % das geschlossene ABS, und ab 90 % Hebel die 100 % Vollbremse.
+  * Beim Erreichen des Stillstands schaltet der Regler weiterhin ohne Umschaltverzögerung direkt in Vorwärtsfahrt um.
 
 ---
 
