@@ -103,6 +103,14 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **2.22_14:** **ABS-Release-Schleife bei niedriger Drehzahl behoben:**
   * Der Near-Stop-ABS-Trigger greift nur, solange das Bremsziel noch über 1200 RPM liegt; bei erreichtem Ziel 0 wird die Bremse vollständig angezogen.
   * Wenn sich das Rad im ABS-Freilauf nicht messbar erholt, wird nach 150 ms die Bremsung beendet statt unbegrenzt freizugeben.
+* **2.22_15:** **Radikales KISS Bang-Bang ABS (Keep It Super Simple):**
+  * SÃ¤mtliche kÃ¼nstlichen Soll-Rampen, PID-Regelschleifen und Zeit-Timeouts restlos entfernt.
+  * **Echte DrehzahlÃ¤nderung:** Direkte Messung von d(RPM)/dt Ã¼ber ein 4-ms-Gleitfenster.
+  * **Hebel bestimmt Soll-VerzÃ¶gerung:** Linear Ã¼ber den vollen Hebelweg (z. B. bis zu -30 RPM/ms bei Level 10).
+  * **Bang-Bang (Auf/Zu):**
+    * VerzÃ¶gert das Rad schneller als vom Hebel gefordert (Rad reiÃŸt ab) -> Bremse sofort 100 % AUF (`allOff()`).
+    * Rad rollt frei hoch -> sobald es aufhÃ¶rt zu beschleunigen (Plateau erreicht) -> Bremse sofort wieder 100 % ZU (`fullBrake()`).
+  * **Stillstand:** Bei Stillstand ist d(RPM)/dt = 0 <= Soll -> Bremse bleibt 100 % zu und hÃ¤lt den Wagen bombenfest. Rollt er am Hang an, regelt das ABS sofort wieder.
 
 ---
 
