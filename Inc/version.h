@@ -3,6 +3,6 @@
  */
 #define VERSION_MAJOR 2
 #define VERSION_MINOR 22
-#define VERSION_PATCH 22
+#define VERSION_PATCH Bremse_normal
 
 #define EEPROM_VERSION 4

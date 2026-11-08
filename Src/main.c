@@ -1399,38 +1399,43 @@ if (!stepper_sine && armed) {
                     uint8_t brake_level = eepromBuffer.drag_brake_strength;
                     if (brake_level < 1) brake_level = 1;
                     if (brake_level > 10) brake_level = 10;
+                    uint16_t deflection = 0;
                     if (!car_reverse_active) {
-                        // Forward driving: reverse stick is proportional LINEAR brake
-                        uint16_t brake_amount = 0;
+                        // Forward driving: reverse stick is proportional brake
                         if (dshot == 0) {
                             uint16_t db = servo_dead_band << 1;
                             uint16_t max_range = 1000 - db;
                             if (newinput < max_range) {
-                                brake_amount = ((uint32_t)(max_range - newinput) * 2000) / max_range;
+                                deflection = ((uint32_t)(max_range - newinput) * 1000) / max_range;
                             }
                         } else {
                             if (newinput <= 1047 && newinput > 47) {
-                                brake_amount = ((uint32_t)(1047 - newinput) * 2000) / (1047 - 48);
+                                deflection = ((uint32_t)(1047 - newinput) * 1000) / (1047 - 48);
                             }
                         }
-                        if (brake_amount > 2000) {
-                            brake_amount = 2000;
-                        }
-
-
-
-
-
-
-                        // Scale maximum brake power linearly by GUI "Brake strength" slider (1=10%, 10=100%)
-                        uint32_t max_limit = (uint32_t)brake_level * 200;
-                        prop_brake_duty_cycle = ((uint32_t)brake_amount * max_limit) / 2000;
                     } else {
-                        // Reverse driving: ANY forward stick is 100% HARD instant stop!
-                        prop_brake_duty_cycle = 2000;
+                        // Reverse driving: forward stick is proportional brake
+                        if (dshot == 0) {
+                            uint16_t db = servo_dead_band << 1;
+                            uint16_t start_point = 1000 + db;
+                            if (newinput > start_point) {
+                                deflection = ((uint32_t)(newinput - start_point) * 1000) / (2000 - start_point);
+                            }
+                        } else {
+                            if (newinput > 1047) {
+                                deflection = ((uint32_t)(newinput - 1048) * 1000) / (2047 - 1048);
+                            }
+                        }
+                    }
+                    if (deflection > 1000) {
+                        deflection = 1000;
                     }
 
-                    if (prop_brake_duty_cycle >= 1990) {
+                    // Serien-AM32: prop_brake_duty_cycle = 1000 + deflection (1000..2000)
+                    // Skaliert ueber GUI "Brake strength" Schieberegler (1=1100, 7=1700, 10=2000)
+                    prop_brake_duty_cycle = 1000 + ((uint32_t)deflection * brake_level) / 10;
+
+                    if (prop_brake_duty_cycle >= 1999) {
                         fullBrake();
                     } else if (prop_brake_duty_cycle > 0) {
                         proportionalBrake();
@@ -1689,7 +1694,7 @@ void tenKhzRoutine()
             }
 
         if (prop_brake_active) {
-            adjusted_duty_cycle = ((uint32_t)prop_brake_duty_cycle * tim1_arr) / 2000;
+            adjusted_duty_cycle = tim1_arr - ((prop_brake_duty_cycle * tim1_arr) / 2000);
         } else if ((armed && running) && input > 47) {
             if (eepromBuffer.rc_car_reverse) {
                 temp_comp_pwm = 0; // Freewheeling (no damped light) while driving in car mode
