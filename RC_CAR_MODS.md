@@ -85,6 +85,9 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * **Echtzeit-Stall-Erkennung:** Erkennung überfälliger Kommutierungen via `INTERVAL_TIMER_COUNT` (1–2 ms Reaktionszeit statt 22,5 ms Blindheit).
   * **Behebung des Anti-Windup-Clamps:** Das Deckeln von `brake_target_rpm` nach unten wurde entfernt, sodass echter Radschlupf ($v_{\text{Fahrzeug}} - v_{\text{Rad}}$) auf rutschigem Untergrund zuverlässig ABS auslöst.
   * **BEMF-Interrupt-Wächter im Freilauf:** Verhinderung des Einschlafens von AM32 (`running = 0`, `maskPhaseInterrupts`) bei Bremsungen aus Fahrt, sodass die BEMF des wieder anrollenden Rades auch auf glattestem Untergrund sofort erfasst wird.
+* **2.22_10:** **Handbremsen-Override für Drifts & U-Turns:**
+  * **0 % bis 89 % Hebel:** Feinfühlige, geschlossene ABS-Verzögerungsregelung (volle 100 % Modulationsbandbreite).
+  * **90 % bis 100 % Hebel (Vollanschlag):** ABS-Override mit sofortiger 100 % Vollbremsung (`fullBrake()`) zum gezielten Anstellen des Hecks, Einleiten von Drifts oder Ankerwerfen.
 
 ---
 

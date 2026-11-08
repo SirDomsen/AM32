@@ -1651,132 +1651,142 @@ void tenKhzRoutine()
             }
             if (eepromBuffer.rc_car_reverse) {
                 if (prop_brake_active && !car_reverse_active && current_brake_amount > 0) {
-                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
-                    if (brake_level < 1) brake_level = 1;
-                    if (brake_level > 10) brake_level = 10;
-
-                    // Level 10 = 30 RPM/ms, Level 1 = 3 RPM/ms
-                    uint32_t max_rate = (uint32_t)brake_level * 3;
-                    uint32_t decel_step = ((uint32_t)current_brake_amount * max_rate) / 2000;
-                    if (decel_step < 1) {
-                        decel_step = 1;
-                    }
-
-                    uint32_t actual_rpm = 0;
-                    if (running && e_com_time > 0) {
-                        actual_rpm = 6000000 / e_com_time;
-                        // Real-time decay if zero-crossing is overdue (wheel stalling / locking)
-                        // INTERVAL_TIMER_COUNT is time since last zero-cross in 0.5us
-                        if (commutation_interval > 0 && INTERVAL_TIMER_COUNT > (commutation_interval * 2)) {
-                            uint32_t instant_rpm = 20000000 / INTERVAL_TIMER_COUNT;
-                            if (actual_rpm > instant_rpm) {
-                                actual_rpm = instant_rpm;
-                            }
-                        }
-                    }
-
-                    if (!brake_ramp_active) {
-                        brake_ramp_active = 1;
-                        brake_target_rpm = actual_rpm;
+                    if (current_brake_amount >= 1800) {
+                        // >= 90% Stick: HANDBRAKE OVERRIDE (Hard 100% Lockup for Drift Initiation / Emergency Stop)
+                        prop_brake_duty_cycle = 2000;
+                        fullBrake();
+                        brake_ramp_active = 0;
                         abs_state = 0;
-                        prop_brake_duty_cycle = (current_brake_amount * 400) / 2000; // gentle initial stroke
-                    }
-
-                    if (abs_state == 1) {
-                        // ABS_RELEASE: Brake 100% open (allOff), monitor wheel re-acceleration from road!
-                        prop_brake_duty_cycle = 0;
-                        allOff();
-                        abs_release_timer++;
-
-                        if (actual_rpm > abs_peak_rpm) {
-                            abs_peak_rpm = actual_rpm;
-                            abs_hold_counter = 0; // Still accelerating!
-                        } else {
-                            abs_hold_counter++;
-                        }
-
-                        // Re-grip criteria:
-                        // Wheel spun up (> 1200 RPM) AND stopped accelerating for 3ms (reached road speed plateau!)
-                        // OR safety timeout of 60ms
-                        if ((abs_peak_rpm > 1200 && abs_hold_counter >= 3) || abs_release_timer >= 60) {
-                            // Re-grip complete! Restart brake cycle from newly acquired road speed
-                            abs_state = 0;
-                            brake_target_rpm = abs_peak_rpm > actual_rpm ? abs_peak_rpm : actual_rpm;
-                            prop_brake_duty_cycle = (current_brake_amount * 400) / 2000; // gentle re-entry stroke
-                        }
                     } else {
-                        // NORMAL BRAKING: Linear deceleration ramp tracking & lockup detection
-                        if (brake_target_rpm > decel_step) {
-                            brake_target_rpm -= decel_step;
-                        } else {
-                            brake_target_rpm = 0;
+                        // 0% - 89% Stick: INTELLIGENT ABS WITH CLOSED-LOOP DECELERATION TRACKING
+                        uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                        if (brake_level < 1) brake_level = 1;
+                        if (brake_level > 10) brake_level = 10;
+
+                        // Level 10 = 30 RPM/ms, Level 1 = 3 RPM/ms
+                        // Scaled over the 0..1800 stick range so 1800 stick gives 100% of max_rate!
+                        uint32_t max_rate = (uint32_t)brake_level * 3;
+                        uint32_t decel_step = ((uint32_t)current_brake_amount * max_rate) / 1800;
+                        if (decel_step < 1) {
+                            decel_step = 1;
                         }
 
-                        // Fast Lockup / Slip Detection:
-                        // Triggers when braking from speed (> 2500 RPM target) and:
-                        // 1. Wheel slip: actual RPM drops > 2500 RPM below target ramp
-                        // 2. Commutation stall: zero crossing overdue by > 3x expected interval and > 2ms elapsed
-                        // 3. Wheel near stop (actual RPM < 1200)
-                        uint8_t lockup = 0;
-                        if (brake_target_rpm > 2500) {
-                            if (actual_rpm + 2500 < brake_target_rpm) {
-                                lockup = 1;
-                            }
-                            if (commutation_interval > 0 && INTERVAL_TIMER_COUNT > (commutation_interval * 3) && INTERVAL_TIMER_COUNT > 4000) {
-                                lockup = 1;
-                            }
-                            if (actual_rpm < 1200) {
-                                lockup = 1;
+                        uint32_t actual_rpm = 0;
+                        if (running && e_com_time > 0) {
+                            actual_rpm = 6000000 / e_com_time;
+                            // Real-time decay if zero-crossing is overdue (wheel stalling / locking)
+                            // INTERVAL_TIMER_COUNT is time since last zero-cross in 0.5us
+                            if (commutation_interval > 0 && INTERVAL_TIMER_COUNT > (commutation_interval * 2)) {
+                                uint32_t instant_rpm = 20000000 / INTERVAL_TIMER_COUNT;
+                                if (actual_rpm > instant_rpm) {
+                                    actual_rpm = instant_rpm;
+                                }
                             }
                         }
 
-                        if (lockup) {
-                            // Lockup detected! DUMP BRAKE IMMEDIATELY!
-                            abs_state = 1;
-                            abs_peak_rpm = actual_rpm;
-                            abs_hold_counter = 0;
-                            abs_release_timer = 0;
+                        if (!brake_ramp_active) {
+                            brake_ramp_active = 1;
+                            brake_target_rpm = actual_rpm;
+                            abs_state = 0;
+                            prop_brake_duty_cycle = (current_brake_amount * 400) / 1800; // gentle initial stroke
+                        }
+
+                        if (abs_state == 1) {
+                            // ABS_RELEASE: Brake 100% open (allOff), monitor wheel re-acceleration from road!
                             prop_brake_duty_cycle = 0;
                             allOff();
-                            // Keep comparator active to track BEMF re-acceleration
-                            running = 1;
-                            old_routine = 0;
-                            enableCompInterrupts();
-                        } else {
-                            // Anti-windup ONLY upwards (prevent target from lagging if actual is higher)
-                            if (actual_rpm > 2000 && brake_target_rpm < actual_rpm - 2000) {
-                                brake_target_rpm = actual_rpm - 2000;
-                            }
-                            // NOTE: Do NOT clamp brake_target_rpm downwards to actual_rpm + 2000,
-                            // as brake_target_rpm is the vehicle speed reference needed to detect wheel slip!
+                            abs_release_timer++;
 
-                            // Closed-loop regulation (error = actual - target)
-                            int32_t rpm_error = (int32_t)actual_rpm - (int32_t)brake_target_rpm;
-                            int32_t duty_adjust = rpm_error / 50;
-                            if (duty_adjust > 25) duty_adjust = 25;
-                            if (duty_adjust < -50) duty_adjust = -50;
-
-                            int32_t new_duty = (int32_t)prop_brake_duty_cycle + duty_adjust;
-
-                            // When target reaches 0 and motor is slowing to a stop, ensure 100% full short-circuit
-                            if (brake_target_rpm == 0 && actual_rpm < 2000) {
-                                new_duty = 2000;
-                            }
-
-                            if (new_duty > 2000) new_duty = 2000;
-                            if (new_duty < 0) new_duty = 0;
-                            prop_brake_duty_cycle = (uint16_t)new_duty;
-
-                            if (prop_brake_duty_cycle >= 1999) {
-                                fullBrake();
-                            } else if (prop_brake_duty_cycle > 0) {
-                                proportionalBrake();
+                            if (actual_rpm > abs_peak_rpm) {
+                                abs_peak_rpm = actual_rpm;
+                                abs_hold_counter = 0; // Still accelerating!
                             } else {
+                                abs_hold_counter++;
+                            }
+
+                            // Re-grip criteria:
+                            // Wheel spun up (> 1200 RPM) AND stopped accelerating for 3ms (reached road speed plateau!)
+                            // OR safety timeout of 60ms
+                            if ((abs_peak_rpm > 1200 && abs_hold_counter >= 3) || abs_release_timer >= 60) {
+                                // Re-grip complete! Restart brake cycle from newly acquired road speed
+                                abs_state = 0;
+                                brake_target_rpm = abs_peak_rpm > actual_rpm ? abs_peak_rpm : actual_rpm;
+                                prop_brake_duty_cycle = (current_brake_amount * 400) / 1800; // gentle re-entry stroke
+                            }
+                        } else {
+                            // NORMAL BRAKING: Linear deceleration ramp tracking & lockup detection
+                            if (brake_target_rpm > decel_step) {
+                                brake_target_rpm -= decel_step;
+                            } else {
+                                brake_target_rpm = 0;
+                            }
+
+                            // Fast Lockup / Slip Detection:
+                            // Triggers when braking from speed (> 2500 RPM target) and:
+                            // 1. Wheel slip: actual RPM drops > 2500 RPM below target ramp
+                            // 2. Commutation stall: zero crossing overdue by > 3x expected interval and > 2ms elapsed
+                            // 3. Wheel near stop (actual RPM < 1200)
+                            uint8_t lockup = 0;
+                            if (brake_target_rpm > 2500) {
+                                if (actual_rpm + 2500 < brake_target_rpm) {
+                                    lockup = 1;
+                                }
+                                if (commutation_interval > 0 && INTERVAL_TIMER_COUNT > (commutation_interval * 3) && INTERVAL_TIMER_COUNT > 4000) {
+                                    lockup = 1;
+                                }
+                                if (actual_rpm < 1200) {
+                                    lockup = 1;
+                                }
+                            }
+
+                            if (lockup) {
+                                // Lockup detected! DUMP BRAKE IMMEDIATELY!
+                                abs_state = 1;
+                                abs_peak_rpm = actual_rpm;
+                                abs_hold_counter = 0;
+                                abs_release_timer = 0;
+                                prop_brake_duty_cycle = 0;
                                 allOff();
+                                // Keep comparator active to track BEMF re-acceleration
+                                running = 1;
+                                old_routine = 0;
+                                enableCompInterrupts();
+                            } else {
+                                // Anti-windup ONLY upwards (prevent target from lagging if actual is higher)
+                                if (actual_rpm > 2000 && brake_target_rpm < actual_rpm - 2000) {
+                                    brake_target_rpm = actual_rpm - 2000;
+                                }
+                                // NOTE: Do NOT clamp brake_target_rpm downwards to actual_rpm + 2000,
+                                // as brake_target_rpm is the vehicle speed reference needed to detect wheel slip!
+
+                                // Closed-loop regulation (error = actual - target)
+                                int32_t rpm_error = (int32_t)actual_rpm - (int32_t)brake_target_rpm;
+                                int32_t duty_adjust = rpm_error / 50;
+                                if (duty_adjust > 25) duty_adjust = 25;
+                                if (duty_adjust < -50) duty_adjust = -50;
+
+                                int32_t new_duty = (int32_t)prop_brake_duty_cycle + duty_adjust;
+
+                                // When target reaches 0 and motor is slowing to a stop, ensure 100% full short-circuit
+                                if (brake_target_rpm == 0 && actual_rpm < 2000) {
+                                    new_duty = 2000;
+                                }
+
+                                if (new_duty > 2000) new_duty = 2000;
+                                if (new_duty < 0) new_duty = 0;
+                                prop_brake_duty_cycle = (uint16_t)new_duty;
+
+                                if (prop_brake_duty_cycle >= 1999) {
+                                    fullBrake();
+                                } else if (prop_brake_duty_cycle > 0) {
+                                    proportionalBrake();
+                                } else {
+                                    allOff();
+                                }
                             }
                         }
+                        last_actual_rpm = actual_rpm;
                     }
-                    last_actual_rpm = actual_rpm;
                 } else if (!prop_brake_active) {
                     brake_ramp_active = 0;
                     brake_target_rpm = 0;
