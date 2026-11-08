@@ -317,8 +317,9 @@ uint8_t car_reverse_active = 0;
 uint16_t current_brake_amount = 0;
 uint16_t active_brake_duty = 0;
 uint8_t abs_state = 0;
-uint32_t abs_peak_rpm = 0;
-uint16_t abs_hold_counter = 0;
+uint32_t abs_min_rpm = 0;
+uint16_t abs_release_timer = 0;
+uint8_t brake_step = 0;
 uint32_t last_actual_rpm = 0;
 uint32_t rpm_history[16] = {0};
 uint8_t history_idx = 0;
@@ -1683,6 +1684,7 @@ void tenKhzRoutine()
                     // Initialize active_brake_duty on fresh brake application (starts at 100% of stick)
                     if (active_brake_duty == 0) {
                         active_brake_duty = current_brake_amount; // 100% of requested stick
+                        brake_step = 4; // 100%
                         for (int i = 0; i < 16; i++) {
                             rpm_history[i] = actual_rpm;
                         }
@@ -1701,26 +1703,25 @@ void tenKhzRoutine()
                         prop_brake_active = 0;
                         car_reverse_active = 0;
                         active_brake_duty = 0;
+                        abs_state = 0;
                     }
 
                     if (abs_state == 1) {
                         // ==========================================
                         // ABS_RELEASE: Brake 100% OPEN (Freilauf)
-                        // Wait until wheel has finished re-accelerating!
+                        // Option A: Sofortiger Wiederantritt bei Drehzahlanstieg (ohne Plateau!)
                         // ==========================================
                         prop_brake_duty_cycle = 0;
                         allOff();
+                        abs_release_timer++;
 
-                        if (actual_rpm > abs_peak_rpm) {
-                            abs_peak_rpm = actual_rpm;
-                            abs_hold_counter = 0; // Wheel is still accelerating from road!
-                        } else {
-                            abs_hold_counter++; // Acceleration stopped / plateau
-                        }
-
-                        // Re-apply brake when acceleration has stopped (speed plateau / re-grip reached)
-                        if (abs_hold_counter >= 4) {
-                            abs_state = 0; // Back to BRAKING!
+                        if (actual_rpm < abs_min_rpm) {
+                            abs_min_rpm = actual_rpm;
+                        } else if (actual_rpm > abs_min_rpm + 50) {
+                            // Wheel bottomed out and is rising! Immediately resume braking at 32%!
+                            abs_state = 0;
+                            brake_step = 1; // 32%
+                            active_brake_duty = ((uint32_t)current_brake_amount * 32) / 100;
                             for (int i = 0; i < 16; i++) {
                                 rpm_history[i] = actual_rpm;
                             }
@@ -1732,6 +1733,12 @@ void tenKhzRoutine()
                             } else {
                                 proportionalBrake();
                             }
+                        } else if (abs_release_timer > 100) {
+                            // Standstill timeout (car stationary): hold brake!
+                            abs_state = 0;
+                            brake_step = 4;
+                            active_brake_duty = current_brake_amount;
+                            brake_apply_timer = 0;
                         }
                     } else {
                         // ==========================================
@@ -1760,15 +1767,13 @@ void tenKhzRoutine()
 
                         brake_apply_timer++;
 
-                        // 1. Slip detection: deceleration too fast -> REDUCE FORCE (x 0.3) and OPEN BRAKE!
+                        // 1. Slip detection: deceleration too fast or lockup -> OPEN BRAKE!
                         // Evaluated after 4ms
                         if (brake_apply_timer >= 4) {
                             if (measured_decel > (int32_t)target_decel || (actual_rpm == 0 && oldest_rpm > 500)) {
-                                active_brake_duty = (active_brake_duty * 7) / 10; // Reduce force by 30%!
-                                if (active_brake_duty < 40) active_brake_duty = 40;
                                 abs_state = 1;
-                                abs_peak_rpm = actual_rpm;
-                                abs_hold_counter = 0;
+                                abs_min_rpm = actual_rpm;
+                                abs_release_timer = 0;
                                 prop_brake_duty_cycle = 0;
                                 allOff();
                                 running = 1;
@@ -1777,22 +1782,29 @@ void tenKhzRoutine()
                             }
                         }
 
-                        // 2. Under-braking detection: deceleration too slow -> INCREASE FORCE (x 1.3)!
-                        // Evaluated after full 16ms window has run
-                        if (abs_state == 0 && brake_apply_timer >= 16) {
-                            if (measured_decel < (int32_t)((target_decel * 7) / 10)) {
-                                active_brake_duty = (active_brake_duty * 13) / 10; // Increase force by 30%!
-                                if (active_brake_duty > current_brake_amount) active_brake_duty = current_brake_amount;
-                                if (active_brake_duty > 2000) active_brake_duty = 2000;
-                                brake_apply_timer = 8; // Re-evaluate in next 8ms
+                        // 2. Stepping up every 8ms: 32% -> 64% -> 96% -> 100% until blockade is reached!
+                        if (abs_state == 0 && brake_apply_timer >= 8) {
+                            if (brake_step == 1) {
+                                brake_step = 2;
+                                active_brake_duty = ((uint32_t)current_brake_amount * 64) / 100;
+                                brake_apply_timer = 0;
+                            } else if (brake_step == 2) {
+                                brake_step = 3;
+                                active_brake_duty = ((uint32_t)current_brake_amount * 96) / 100;
+                                brake_apply_timer = 0;
+                            } else if (brake_step == 3) {
+                                brake_step = 4;
+                                active_brake_duty = current_brake_amount; // 100%
+                                brake_apply_timer = 0;
                             }
                         }
                     }
                     last_actual_rpm = actual_rpm;
                 } else if (!prop_brake_active) {
                     abs_state = 0;
-                    abs_peak_rpm = 0;
-                    abs_hold_counter = 0;
+                    abs_min_rpm = 0;
+                    abs_release_timer = 0;
+                    brake_step = 0;
                     brake_apply_timer = 0;
                     active_brake_duty = 0;
                     for (int i = 0; i < 16; i++) {
