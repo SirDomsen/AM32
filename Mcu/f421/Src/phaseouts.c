@@ -53,7 +53,7 @@ void proportionalBrake()
     // set low channel to PWM, duty cycle will now control braking
     gpio_mode_QUICK(PHASE_A_GPIO_PORT_LOW, GPIO_MODE_MUX, GPIO_PULL_NONE,
         PHASE_A_GPIO_LOW);
-    gpio_mode_QUICK(PHASE_A_GPIO_PORT_LOW, GPIO_MODE_MUX, GPIO_PULL_NONE,
+    gpio_mode_QUICK(PHASE_B_GPIO_PORT_LOW, GPIO_MODE_MUX, GPIO_PULL_NONE,
         PHASE_B_GPIO_LOW);
     gpio_mode_QUICK(PHASE_C_GPIO_PORT_LOW, GPIO_MODE_MUX, GPIO_PULL_NONE,
         PHASE_C_GPIO_LOW);

@@ -1413,29 +1413,20 @@ if (!stepper_sine && armed) {
                                 deflection = ((uint32_t)(1047 - newinput) * 1000) / (1047 - 48);
                             }
                         }
-                    } else {
-                        // Reverse driving: forward stick is proportional brake
-                        if (dshot == 0) {
-                            uint16_t db = servo_dead_band << 1;
-                            uint16_t start_point = 1000 + db;
-                            if (newinput > start_point) {
-                                deflection = ((uint32_t)(newinput - start_point) * 1000) / (2000 - start_point);
-                            }
-                        } else {
-                            if (newinput > 1047) {
-                                deflection = ((uint32_t)(newinput - 1048) * 1000) / (2047 - 1048);
-                            }
+                        if (deflection > 1000) {
+                            deflection = 1000;
                         }
-                    }
-                    if (deflection > 1000) {
-                        deflection = 1000;
+
+                        // Serien-AM32: prop_brake_duty_cycle = 1000 + deflection (1000..2000)
+                        // Skaliert ueber GUI "Brake strength" Schieberegler (1=1100, 7=1700, 10=2000)
+                        prop_brake_duty_cycle = 1000 + ((uint32_t)deflection * brake_level) / 10;
+                    } else {
+                        // Reverse driving: ANY forward stick is 100% HARD instant stop!
+                        // Bites immediately with 100% full brake to stop reverse rotation instantly
+                        prop_brake_duty_cycle = 2000;
                     }
 
-                    // Serien-AM32: prop_brake_duty_cycle = 1000 + deflection (1000..2000)
-                    // Skaliert ueber GUI "Brake strength" Schieberegler (1=1100, 7=1700, 10=2000)
-                    prop_brake_duty_cycle = 1000 + ((uint32_t)deflection * brake_level) / 10;
-
-                    if (prop_brake_duty_cycle >= 1999) {
+                    if (prop_brake_duty_cycle >= 1990) {
                         fullBrake();
                     } else if (prop_brake_duty_cycle > 0) {
                         proportionalBrake();
