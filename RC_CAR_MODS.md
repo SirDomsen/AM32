@@ -50,6 +50,23 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * Obwohl in der GUI `Brake on stop` aktiv gesetzt wird (um den Schieber freizuschalten), greift in Neutralstellung **keine automatische Blockierbremse**.
 * Bei Hebel in Neutral schaltet der Regler immer auf Freilauf (`allOff()`), sodass das Auto natürlich ausrollt.
 
+### 7. Selbstlernendes Sensorless BLDC-ABS (Anti-Blockier-System)
+* **Physikalischer Massensprung-Erkenner (360°-Fenster):**
+  * Bei einem 2-Pol-Motor entspricht eine elektrische Umdrehung (6 Kommutierungsschritte = 360°) exakt einer mechanischen Rotorumdrehung.
+  * Durch die rollierende Auswertung des 360°-Fensters werden Pol-Asymmetrien und Komparator-Offsets ohne Phasenverzögerung (Group Delay) eliminiert.
+  * Solange die Reifen haften, verzögert der Motor die gesamte Fahrzeugmasse ($J_{\text{Auto}}$). Sobald das Rad abreißt/blockiert, koppelt sich die Fahrzeugmasse ab und nur noch der leichte Antriebsstrang ($J_{\text{Antrieb}}$) wird gebremst $\rightarrow$ die Periodenverlängerung $\Delta T$ springt um Faktor 5 bis 20!
+* **Selbstlernende Fahrzeug-Baseline im RAM:**
+  * Ein IIR-Tiefpassfilter lernt im Fahrbetrieb den normalen Verzögerungs-Quotienten $Q = \Delta T / \text{Duty}$ des Fahrzeugs.
+  * Die ABS-Schlupfschwelle adaptiert sich dynamisch: $\text{lock\_threshold} \approx 2{,}25 \times Q \times \text{Duty}$.
+* **4-Phasen-Regelkreis & Pfützen-feste 2-Stufen-Rampe:**
+  1. **`ABS_BUILD`:** Druckaufbau Richtung Fahrer-Sollwert. Bei Abriss ($\text{confidence} \ge 2$) $\rightarrow$ Wechsel zu `ABS_DUMP`.
+  2. **`ABS_DUMP`:** Sofortiger Freilauf ($0\,\%$ Bremsmoment). Das Schleppmoment hält den Antriebsstrang auf der Bremsflanke. Komparator überwacht das Wiederanlaufen ($\Delta T \le 0$).
+  3. **`ABS_HOLD` (Stufe A Fast-Jump):** Springt sofort auf $85\,\%$ von `last_lock_duty`. Bei extrem steilem Wiederanlauf (Pfützen-Erkennung: Low-to-High-$\mu$) springt das ABS stattdessen Richtung $60\,\%$ von `peak_lock_duty` (Asphalt-Niveau).
+  4. **`ABS_REAPPLY` (Stufe B Progressive Such-Rampe):** Steigt mit schrittweise verdoppelter Schrittweite zügig wieder Richtung Zielbremswert.
+* **Fallbacks & Notbremse:**
+  * **In-Air / Panic Override:** Bei $\ge 95\,\%$ Bremshebelweg wird das ABS komplett überbrückt (100 % Notbremse & Fluglagenkorrektur bei Sprüngen).
+  * **Standstill-Fallback:** Bei natürlichem BEMF-Abriss kurz vor dem Stillstand (`INTERVAL_TIMER_COUNT > 45000`) schaltet das System nahtlos auf die statische Haltebremse um.
+
 ---
 
 ## 🎛️ Mapping im AM32-Web-Configurator

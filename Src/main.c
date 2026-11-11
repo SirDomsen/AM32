@@ -249,6 +249,7 @@ an settings option)
 #endif
 
 #include "version.h"
+#include "abs_control.h"
 
 void zcfoundroutine(void);
 
@@ -928,6 +929,9 @@ void commutate()
     bemfcounter = 0;
     zcfound = 0;
     commutation_intervals[step - 1] = commutation_interval; // just used to calulate average
+    if (eepromBuffer.rc_car_reverse) {
+        abs_on_commutation_step(step, commutation_interval);
+    }
     
 #ifdef USE_PULSE_OUT
 	if(step == 1 || step == 4  ){
@@ -1523,16 +1527,19 @@ if (!stepper_sine && armed) {
 
                         // Serien-AM32: prop_brake_duty_cycle = 1000 + deflection (1000..2000)
                         // Skaliert ueber GUI "Brake strength" Schieberegler (1=1100, 7=1700, 10=2000)
-                        prop_brake_duty_cycle = 1000 + ((uint32_t)deflection * brake_level) / 10;
+                        // ABS Interceptor schaltet sich zwischen target_brake und Timer
+                        uint16_t target_brake = 1000 + ((uint32_t)deflection * brake_level) / 10;
+                        prop_brake_duty_cycle = abs_process_brake(target_brake, deflection, running);
                     } else {
                         // Reverse driving: ANY forward stick is 100% HARD instant stop!
                         // Bites immediately with 100% full brake to stop reverse rotation instantly
+                        abs_reset();
                         prop_brake_duty_cycle = 2000;
                     }
 
                     if (prop_brake_duty_cycle >= 1990) {
                         fullBrake();
-                    } else if (prop_brake_duty_cycle > 0) {
+                    } else if (prop_brake_duty_cycle > 1000) {
                         proportionalBrake();
                     } else {
                         allOff();
@@ -1540,6 +1547,7 @@ if (!stepper_sine && armed) {
 #endif
                 } else {
                     prop_brake_duty_cycle = 0;
+                    abs_reset();
                 }
             } else if (!eepromBuffer.comp_pwm) {
                 duty_cycle_setpoint = 0;
@@ -1718,6 +1726,9 @@ void tenKhzRoutine()
         if (one_khz_loop_counter > PID_LOOP_DIVIDER) { // 1khz PID loop
             PROCESS_ADC_FLAG = 1; // set flag to do new adc read at lower priority
             one_khz_loop_counter = 0;
+            if (eepromBuffer.rc_car_reverse) {
+                abs_periodic_1khz();
+            }
             if (use_current_limit && running) {
                 use_current_limit_adjust -= (int16_t)(doPidCalculations(&currentPid, actual_current,
                                                           eepromBuffer.limits.current * 2 * 100)
@@ -2066,6 +2077,7 @@ int main(void)
     enableCorePeripherals();
     loadEEpromSettings();
 #endif
+    abs_init();
 
     if (VERSION_MAJOR != eepromBuffer.version.major || VERSION_MINOR != eepromBuffer.version.minor || EEPROM_VERSION > eepromBuffer.eeprom_version) {
         eepromBuffer.version.major = VERSION_MAJOR;
