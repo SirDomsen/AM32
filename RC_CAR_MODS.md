@@ -11,24 +11,19 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * **Neu:** Während der Fahrt (sowohl vorwärts als auch rückwärts) bleibt die Low-Side-PWM aus (`temp_comp_pwm = 0`). 
 * **Effekt:** Das Auto rollt beim Gaswegnehmen weich und frei auf die neue Geschwindigkeit bzw. zum Stillstand aus (Dioden-Freilauf).
 
-### 2. Intelligente Verzögerungsregelung (`Brake strength`) mit dynamischem Re-Grip ABS (Release 2.22_8)
+### 2. Einstellbare Betriebsbremskraft (`Brake strength`) - Linear & Rampenfrei (Release 2.22_6)
 * **Steuerung:** Über den Schieberegler **`Brake strength`** (im Code `drag_brake_strength`, Werte 1 bis 10) im Configurator.
-* **Grip-Level / Maximalverzögerung (in RPM/ms):**
-  * Der Schieberegler fungiert nun als Kalibrierung der **maximal physikalisch fahrbaren Verzögerungsrate** ($\text{Stufe} \times 3\,\text{RPM/ms}$):
-  * **Stufe 1:** $-3\,\text{RPM/ms}$ (sanftes, langes Ausrollen für Glatteis / lose Erde)
-  * **Stufe 5:** $-15\,\text{RPM/ms}$ (ausgewogene Straßenverzögerung)
-  * **Stufe 10:** $-30\,\text{RPM/ms}$ (maximaler Bremsbiss für High-Grip)
-* **Geschlossener 1-kHz-Verzögerungsregelkreis (Closed-Loop Deceleration Tracking):**
-  * **Linearer Drehzahlabfall:** Die Drehzahl fällt bei konstant gehaltenem Hebelweg exakt linear bis zum Stillstand ab.
-  * **Schrittgeschwindigkeit / Stillstand:** Bei sinkender Drehzahl (wegbrechender Gegen-EMK) zieht der Regler die FETs automatisch stufenlos bis auf 100 % Phasenkurzschluss zu, sodass selbst ein sanfter Hebelbefehl das Auto zuverlässig auf den Punkt zum Stehen bringt.
-* **Dynamisches Re-Grip ABS (Keine starren Timer, echtes Fahrbahn-Tracking):**
-  * **Sofortige Notentlastung:** Bricht die Raddrehzahl schneller ein als die Soll-Rampe (Blockadegefahr), schaltet der Regler die Bremse **augenblicklich zu 100 % auf Freilauf (`allOff()`)**.
-  * **Glasklare BEMF:** Im Freilauf sind alle FETs aus $\rightarrow$ AM32 sieht das absolut störungsfreie BEMF-Signal und beobachtet, wie der rollende Asphalt das Rad antreibt.
-  * **Beschleunigungs-Wächter:** Solange die Raddrehzahl steigt ($d\omega/dt > 0$), bleibt die Bremse voll geöffnet.
-  * **Neuer Bremszyklus bei Plateau:** Sobald das Rad nicht weiter beschleunigt (Rollgeschwindigkeit über Grund erreicht), startet der Regler sofort den nächsten Bremsversuch ab dieser erholten Geschwindigkeit (Sägezahn-Profil).
+* **Skalierung:**
+  * **Stufe 1:** 10 % maximale Bremskraft (sehr sanftes Abbremsen, schont Micro-Getriebe)
+  * **Stufe 5:** 50 %
+  * **Stufe 8:** 80 %
+  * **Stufe 10:** 100 % (volle Phasenkurzschluss-Bremse `fullBrake()`, absolut identisch zur maximalen Hardware-Bremsleistung des Original-AM32)
+* **Direktes, lineares Ansprechverhalten ohne Rampen (Instant Response):**
+  * **100 % rampenfrei:** Keine künstlichen Zeitfilter, kein verzögerndes Blend-In – der Bremsbefehl liegt exakt und ohne Millisekunden-Verlust an den FETs an.
+  * **Direkt & linear:** Kein flaches Expo mehr, das die Bremse bei Langsamfahrt wirkungslos macht. Bereits ab den ersten Prozenten Hebelweg baut die Bremse verlässlich spürbare Verzögerung auf.
 * **Brutale 100 % Rückwärts-Bremse (Knackige Wende Rückwärts $\rightarrow$ Vorwärts):**
   * Beim Bremsen aus Rückwärtsfahrt (Antippen von Gas nach vorne) greift **sofort und kompromisslos 100 % Vollbremsung (`fullBrake()`)**.
-  * Der Motor stoppt die Rückwärtsdrehung augenblicklich und schießt ohne Verzögerung vorwärts los.
+  * Da man aus Rückwärtsfahrt ohnehin nur leicht Gas antippt, stoppt der Motor die Rückwärtsdrehung augenblicklich und schießt ohne Verzögerung vorwärts los.
 
 ### 3. Einstellbare Rückfahrgeschwindigkeit (`Running brake level`)
 * **Steuerung:** Über den Schieberegler **`Running brake level`** (im Code `driving_brake_strength`, Werte 1 bis 10) im Configurator.
@@ -38,15 +33,15 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
   * **Stufe 3:** 30 % Rückwärts-Leistung (optimal für enges Rangieren ohne Durchdrehen)
 * **Volle Auflösung:** Der Hebelweg des Senders bleibt auch bei reduzierter Rückwärts-Power zu 100 % erhalten – du hast die volle Präzision und Feinfühligkeit.
 
-### 4. Symmetrischer Getriebeschutz & Sofort-Wende (Rückwärts $\rightarrow$ Vorwärts)
+### 4. Symmetrischer Getriebeschutz (Rückwärts $\rightarrow$ Vorwärts)
 * Fährt das Auto rückwärts und du gibst Vorwärtsgas:
-  * Das Vorwärtsgas greift sofort mit **100 % Vollbremsung (`fullBrake()`)**, um die Rückwärtsdrehung in wenigen Millisekunden zu stoppen.
+  * Das Vorwärtsgas wirkt als **dosierte Bremse bis zum Stillstand (0 RPM)**.
   * Sobald die sensorlose Kommutierung Stillstand erkennt (`running == 0`), schaltet der Regler **ohne Verzögerung direkt in Vorwärtsfahrt** um und beschleunigt los.
   * Der Hebel muss **nicht** erst in Neutral losgelassen werden!
 
 ### 5. Double-Tap & Stillstandsschutz (Vorwärts $\rightarrow$ Rückwärts)
 * Fährst du vorwärts und drückst nach hinten:
-  * Wirkt als proportionale Verzögerungsregelung bis zum Stillstand.
+  * Wirkt proportional als Bremse bis zum Stillstand.
   * Erst wenn der Gashebel **Neutral durchläuft UND der Motor tatsächlich steht**, wird der Rückwärtsgang freigegeben.
   * Erst der nächste Druck nach hinten fährt rückwärts an.
   * Rollt das Auto noch schnell vorwärts und man tippt am Hebel, bleibt der Rückwärtsgang gesperrt und bremst weiterhin sicher ab (Getriebeschutz).
@@ -55,88 +50,17 @@ Diese Firmware-Erweiterung optimiert AM32 speziell für **(Micro) RC-Cars, Bashe
 * Obwohl in der GUI `Brake on stop` aktiv gesetzt wird (um den Schieber freizuschalten), greift in Neutralstellung **keine automatische Blockierbremse**.
 * Bei Hebel in Neutral schaltet der Regler immer auf Freilauf (`allOff()`), sodass das Auto natürlich ausrollt.
 
-### 7. Globaler Bugfix der AM32 `map()`-Funktion (`Src/functions.c`)
-* **Problem im AM32-Original:** Die `map()`-Funktion prüfte Grenzüberschreitungen vor der Umkehrprüfung (`if (in_min > in_max)`). Bei fallenden Wertebereichen (z. B. Bremsweg von 950 nach 0) gab `map()` für alle Werte $\ge 0$ sofort `out_max` (100 %) zurück $\rightarrow$ digitaler Vollanker ohne Dosierbarkeit.
-* **Lösung:** `map()` prüft umgekehrte Wertebereiche nun an erster Stelle, und die Bremsmodulation rechnet direkt per Dreisatz.
-
 ---
 
 ## 🎛️ Mapping im AM32-Web-Configurator
 
 | GUI-Element | EEPROM-Feld | Funktion im Car-Modus |
 | :--- | :--- | :--- |
-| **`Brake strength`** (1–10) | `drag_brake_strength` | **Maximalverzögerung / Grip-Level** (3 bis 30 RPM/ms, ABS-Grenze) |
+| **`Brake strength`** (1–10) | `drag_brake_strength` | **Maximale Bremskraft** (10 % bis 100 %) |
 | **`Running brake level`** (1–10) | `driving_brake_strength` | **Maximale Rückfahrgeschwindigkeit** (10 % bis 100 %) |
 | **`Car type reverse braking`** | `rc_car_reverse` | Fest aktiviert (`1`) |
 | **`3D mode`** | `bi_direction` | Fest aktiviert (`1`) |
 | **`Brake on stop`** | `brake_on_stop` | GUI-Freischalter (`1`), im Fahrbetrieb Freilauf in Neutral |
-
----
-
-## 📜 Release-Historie
-
-* **2.22_1:** Initialer Car-Modus (Freilauf bei Gasrücknahme, symmetrischer Getriebeschutz, Schieberegler-Freischaltung).
-* **2.22_4:** Entkopplung des internen Rückwärtsgang-Status (`car_reverse_active`) von `dir_reversed`.
-* **2.22_5:** Behebung des AM32 `map()`-Bugs bei umgekehrten Zahlenbereichen; direkte Hebel-Dreisatzberechnung.
-* **2.22_6:** Vollständige Entfernung aller künstlichen Brems-Zeitverzögerungen/Rampen; 100 % Sofort-Biss beim Wenden aus Rückwärtsfahrt.
-* **2.22_7:** Einführung des **geschlossenen 1-kHz-Verzögerungsregelkreises mit Anti-Lock (ABS)** und Kalibrierung über `Brake strength` (3 bis 30 RPM/ms).
-* **2.22_8:** Implementierung der dynamischen Re-Grip ABS State-Machine mit Freilauf-Plateau-Erkennung.
-* **2.22_9:** **Low-Grip & Stall-Erkennung Bugfix:**
-  * **Echtzeit-Stall-Erkennung:** Erkennung überfälliger Kommutierungen via `INTERVAL_TIMER_COUNT` (1–2 ms Reaktionszeit statt 22,5 ms Blindheit).
-  * **Behebung des Anti-Windup-Clamps:** Das Deckeln von `brake_target_rpm` nach unten wurde entfernt, sodass echter Radschlupf ($v_{\text{Fahrzeug}} - v_{\text{Rad}}$) auf rutschigem Untergrund zuverlässig ABS auslöst.
-  * **BEMF-Interrupt-Wächter im Freilauf:** Verhinderung des Einschlafens von AM32 (`running = 0`, `maskPhaseInterrupts`) bei Bremsungen aus Fahrt, sodass die BEMF des wieder anrollenden Rades auch auf glattestem Untergrund sofort erfasst wird.
-* **2.22_10:** **Handbremsen-Override für Drifts & U-Turns:**
-  * **0 % bis 89 % Hebel:** Feinfühlige, geschlossene ABS-Verzögerungsregelung (volle 100 % Modulationsbandbreite).
-  * **90 % bis 100 % Hebel (Vollanschlag):** ABS-Override mit sofortiger 100 % Vollbremsung (`fullBrake()`) zum gezielten Anstellen des Hecks, Einleiten von Drifts oder Ankerwerfen.
-* **2.22_11:** **Symmetrisches ABS & Handbremse auch beim Bremsen aus Rückwärtsfahrt:**
-  * Auch beim Abbremsen aus schneller Rückwärtsfahrt (Vorwärts-Gashebel) greift von 0 % bis 89 % das geschlossene ABS, und ab 90 % Hebel die 100 % Vollbremse.
-  * Beim Erreichen des Stillstands schaltet der Regler weiterhin ohne Umschaltverzögerung direkt in Vorwärtsfahrt um.
-* **2.22_12:** **Reines Plateau-Re-Grip (Entfernung des starren 60-ms-Timeouts):**
-  * Das künstliche 60-ms-Zeitlimit im Freilauf wurde entfernt.
-  * Solange das Rad durch den Bodenkontakt noch weiter hochbeschleunigt ($d\omega/dt > 0$), bleibt die Bremse geöffnet – egal wie lange das Rad auf glattem Untergrund braucht.
-  * Erst wenn die Drehzahl für 4 ms nicht mehr steigt (echtes Geschwindigkeitsplateau erreicht), wird der nächste Bremszyklus eingeleitet.
-  * Standstill-Erkennung: Bleibt das Rad für 150 ms ohne jede Beschleunigung unter 1200 RPM, wird Stillstand erkannt und die Haltebremse angezogen.
-* **2.22_13:** **ABS auch am unteren Ende der Bremsrampe:**
-  * Schlupf nahe dem Stillstand löst ABS auch dann aus, wenn das Bremsziel bereits unter 2500 RPM liegt.
-  * Die volle Bremsung bei Bremsziel 0 und die zeitbasierte Vollbremsung nach 150 ms ohne messbare Raddrehung wurden entfernt; ohne erfassbaren Wiedergriff bleibt die Bremse offen.
-  * Die Wiederbremsung erfolgt nach einem messbaren Drehzahlplateau ab 600 RPM statt 1200 RPM.
-* **2.22_14:** **ABS-Release-Schleife bei niedriger Drehzahl behoben:**
-  * Der Near-Stop-ABS-Trigger greift nur, solange das Bremsziel noch über 1200 RPM liegt; bei erreichtem Ziel 0 wird die Bremse vollständig angezogen.
-  * Wenn sich das Rad im ABS-Freilauf nicht messbar erholt, wird nach 150 ms die Bremsung beendet statt unbegrenzt freizugeben.
-* **2.22_15:** **Radikales KISS Bang-Bang ABS (Keep It Super Simple):**
-  * SÃ¤mtliche kÃ¼nstlichen Soll-Rampen, PID-Regelschleifen und Zeit-Timeouts restlos entfernt.
-  * **Echte DrehzahlÃ¤nderung:** Direkte Messung von d(RPM)/dt Ã¼ber ein 4-ms-Gleitfenster.
-  * **Hebel bestimmt Soll-VerzÃ¶gerung:** Linear Ã¼ber den vollen Hebelweg (z. B. bis zu -30 RPM/ms bei Level 10).
-  * **Bang-Bang (Auf/Zu):**
-    * VerzÃ¶gert das Rad schneller als vom Hebel gefordert (Rad reiÃŸt ab) -> Bremse sofort 100 % AUF (`allOff()`).
-    * Rad rollt frei hoch -> sobald es aufhÃ¶rt zu beschleunigen (Plateau erreicht) -> Bremse sofort wieder 100 % ZU (`fullBrake()`).
-  * **Stillstand:** Bei Stillstand ist d(RPM)/dt = 0 <= Soll -> Bremse bleibt 100 % zu und hÃ¤lt den Wagen bombenfest. Rollt er am Hang an, regelt das ABS sofort wieder.
-* **2.22_16:** **Adaptive Bremskraft-Skalierung & Turnaround-Fix:**
-  * Nach Schlupf/Blockade wird die Bremskraft auf das 0,3-fache reduziert.
-  * Bei zu geringer Verzögerung wird die Bremskraft um das 1,3-fache gesteigert (bis maximal Knüppelwert).
-  * Sofort-Wende aus Rückwärtsbremsung bei 0 RPM ohne Gashebel-Release.
-* **2.22_17:** **16-ms-Gleitfenster & 32 RPM/ms Maximalverzögerung:**
-  * 16-ms Ringpuffer zur Eliminierung des Quantisierungsrauschens bei niedrigen Drehzahlen.
-* **2.22_21:** **Deterministischer 4-ms-Freilaufpuls:**
-  * **Problem behoben:** In 2.22_20 wartete der Freilauf bei sensorlos nicht messbarem Drehzahlanstieg bis zu 100 ms Timeout (Auto rollte 100 ms ungebremst -> „bremst nur manchmal“).
-  * **Lösung:** Der Freilauf ist nun ein präziser, ultrakurzer Impuls von exakt **4 ms**, um das Rad aus der Blockade zu lösen.
-  * Nach 4 ms greift die Bremse garantiert sofort bei **32 %** und steppt alle 8 ms hoch (64 % -> 96 % -> 100 %).
-  * Bei 100 % bleibt die Schlupferkennung durchgehend in jedem Millisekunden-Takt aktiv.
-* **2.22_20:** **Stufen-ABS ohne Plateau (32 % -> 64 % -> 96 % alle 8 ms):**
-  * **Kein Warten auf Plateau:** Bei Blockade öffnet die Bremse kurz; sobald das Rad den Tiefpunkt durchschritten hat und wieder ansteigt (`actual_rpm > abs_min_rpm + 50`), greift die Bremse augenblicklich wieder.
-  * **Stufen-Rampe alle 8 ms:**
-    * Nach Freilauf Wiederansetzen mit **32 %** Knüppelwert.
-    * Bleibt das Rad stabil: Steigerung auf **64 %** nach 8 ms, danach auf **96 %** und **100 %**.
-    * Bei erneutem Schlupf auf einer Stufe: Sofort Freilauf und Neustart bei 32 %.
-* **2.22_19:** **Symmetrische Bremskraftanpassung (±30 %):**
-  * Bei Schlupf/Blockade wird die Bremskraft nur um 30 % reduziert (`active_brake_duty * 0.7`) statt um 70 %, wodurch kein Kraftloch mehr entsteht.
-  * Bei zu geringer Verzögerung wird symmetrisch um 30 % nachgeregelt (`active_brake_duty * 1.3`).
-  * Schnelle und stabile Konvergenz an der maximalen Reibgrenze.
-* **2.22_18:** **100 % Knüppel-Startbiss & 4-ms-Sofortansprache:**
-  * Bremsung startet sofort mit 100 % der Knüppelkraft für direkten, verzögerungsfreien Antritt.
-  * Puffer wird beim Bremsstart sofort mit der aktuellen Drehzahl initialisiert (kein Blindflug mehr).
-  * Schlupferkennung bereits nach 4 ms aktiv, Bremskraft wird bei Traktionsverlust augenblicklich auf das 0,3-fache abgesenkt.
-  * Entlastet der Fahrer den Bremshebel, folgt die Bremskraft sofort nach unten.
 
 ---
 

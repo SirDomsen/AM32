@@ -314,16 +314,6 @@ char send_esc_info_flag;
 uint32_t eeprom_address = EEPROM_START_ADD; 
 uint16_t prop_brake_duty_cycle = 0;
 uint8_t car_reverse_active = 0;
-uint16_t current_brake_amount = 0;
-uint16_t active_brake_duty = 0;
-uint8_t abs_state = 0;
-uint32_t abs_min_rpm = 0;
-uint16_t abs_release_timer = 0;
-uint8_t brake_step = 0;
-uint32_t last_actual_rpm = 0;
-uint32_t rpm_history[16] = {0};
-uint8_t history_idx = 0;
-uint8_t brake_apply_timer = 0;
 uint16_t ledcounter = 0;
 uint16_t ramp_count;
 uint32_t process_time = 0;
@@ -1102,6 +1092,9 @@ void setInput()
                     }
                 } else if (newinput < (1000 - db)) {
                     // Reverse throttle / brake applied
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
                     if (!car_reverse_active) {
                         // Currently in forward:
                         if (running || !return_to_center) {
@@ -1138,6 +1131,7 @@ void setInput()
                     adjusted_input = 0;
                     prop_brake_active = 0;
                     if (!running) {
+                        car_reverse_active = 0; // Reset reverse mode when stopped at neutral!
                         return_to_center = 1; // arm reverse only when stopped at neutral
                     } else {
                         return_to_center = 0;
@@ -1208,6 +1202,9 @@ void setInput()
                     }
                 } else if (newinput <= 1047 && newinput > 47) {
                     // Reverse throttle / brake applied
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
                     if (!car_reverse_active) {
                         if (running || !return_to_center) {
                             adjusted_input = 0;
@@ -1362,9 +1359,7 @@ if (!stepper_sine && armed) {
                 duty_cycle_setpoint = map(input, 47, 2047, minimum_duty_cycle, 2000);
             }
 
-            if (!eepromBuffer.rc_car_reverse) {
-                prop_brake_active = 0;
-            }
+            prop_brake_active = 0;
         }
 
         if (input < 47 + (80 * eepromBuffer.use_sine_start)) {
@@ -1401,48 +1396,46 @@ if (!stepper_sine && armed) {
                 }
                 if (prop_brake_active) {
 #ifndef PWM_ENABLE_BRIDGE
-                    uint16_t brake_amount = 0;
-                    uint16_t db = servo_dead_band << 1;
+                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
+                    if (brake_level < 1) brake_level = 1;
+                    if (brake_level > 10) brake_level = 10;
+                    uint16_t deflection = 0;
                     if (!car_reverse_active) {
-                        // Forward driving: reverse stick sets desired deceleration rate
+                        // Forward driving: reverse stick is proportional brake
                         if (dshot == 0) {
+                            uint16_t db = servo_dead_band << 1;
                             uint16_t max_range = 1000 - db;
                             if (newinput < max_range) {
-                                brake_amount = ((uint32_t)(max_range - newinput) * 2000) / max_range;
+                                deflection = ((uint32_t)(max_range - newinput) * 1000) / max_range;
                             }
                         } else {
                             if (newinput <= 1047 && newinput > 47) {
-                                brake_amount = ((uint32_t)(1047 - newinput) * 2000) / (1047 - 48);
+                                deflection = ((uint32_t)(1047 - newinput) * 1000) / (1047 - 48);
                             }
                         }
-                    } else {
-                        // Reverse driving: forward stick sets desired deceleration rate
-                        if (dshot == 0) {
-                            uint16_t min_range = 1000 + db;
-                            if (newinput > min_range) {
-                                brake_amount = ((uint32_t)(newinput - min_range) * 2000) / (2000 - min_range);
-                            }
-                        } else {
-                            if (newinput >= 1048) {
-                                brake_amount = ((uint32_t)(newinput - 1048) * 2000) / (2047 - 1048);
-                            }
+                        if (deflection > 1000) {
+                            deflection = 1000;
                         }
-                    }
-                    if (brake_amount > 2000) {
-                        brake_amount = 2000;
-                    }
-                    current_brake_amount = brake_amount;
 
-                    if (current_brake_amount == 0) {
-                        prop_brake_duty_cycle = 0;
-                        abs_state = 0;
+                        // Serien-AM32: prop_brake_duty_cycle = 1000 + deflection (1000..2000)
+                        // Skaliert ueber GUI "Brake strength" Schieberegler (1=1100, 7=1700, 10=2000)
+                        prop_brake_duty_cycle = 1000 + ((uint32_t)deflection * brake_level) / 10;
+                    } else {
+                        // Reverse driving: ANY forward stick is 100% HARD instant stop!
+                        // Bites immediately with 100% full brake to stop reverse rotation instantly
+                        prop_brake_duty_cycle = 2000;
+                    }
+
+                    if (prop_brake_duty_cycle >= 1990) {
+                        fullBrake();
+                    } else if (prop_brake_duty_cycle > 0) {
+                        proportionalBrake();
+                    } else {
                         allOff();
                     }
 #endif
                 } else {
-                    current_brake_amount = 0;
                     prop_brake_duty_cycle = 0;
-                    abs_state = 0;
                 }
             } else if (!eepromBuffer.comp_pwm) {
                 duty_cycle_setpoint = 0;
@@ -1653,154 +1646,6 @@ void tenKhzRoutine()
                 }
                 if (zero_crosses < 100) {
                     speedPid.integral = 0;
-                }
-            }
-            if (eepromBuffer.rc_car_reverse) {
-                if (prop_brake_active && current_brake_amount > 0) {
-                    uint8_t brake_level = eepromBuffer.drag_brake_strength;
-                    if (brake_level < 1) brake_level = 1;
-                    if (brake_level > 10) brake_level = 10;
-
-                    // Level 10 = 32 RPM/ms max decel rate
-                    uint32_t max_rate = ((uint32_t)brake_level * 32) / 10;
-                    if (max_rate < 3) max_rate = 3;
-                    uint32_t target_decel = ((uint32_t)current_brake_amount * max_rate) / 2000;
-                    if (target_decel < 1) {
-                        target_decel = 1;
-                    }
-
-                    // 1. Get instantaneous RPM (with real-time decay if commutation is overdue)
-                    uint32_t actual_rpm = 0;
-                    if (running && e_com_time > 0) {
-                        actual_rpm = 6000000 / e_com_time;
-                        if (commutation_interval > 0 && INTERVAL_TIMER_COUNT > (commutation_interval * 2)) {
-                            uint32_t instant_rpm = 20000000 / INTERVAL_TIMER_COUNT;
-                            if (actual_rpm > instant_rpm) {
-                                actual_rpm = instant_rpm;
-                            }
-                        }
-                    }
-
-                    // Initialize active_brake_duty on fresh brake application (starts at 100% of stick)
-                    if (active_brake_duty == 0) {
-                        active_brake_duty = current_brake_amount; // 100% of requested stick
-                        brake_step = 4; // 100%
-                        for (int i = 0; i < 16; i++) {
-                            rpm_history[i] = actual_rpm;
-                        }
-                        history_idx = 0;
-                        brake_apply_timer = 0;
-                    }
-
-                    // Never exceed driver stick request if driver relaxes stick
-                    if (active_brake_duty > current_brake_amount) {
-                        active_brake_duty = current_brake_amount;
-                    }
-
-                    // Instant turnaround from reverse: if motor reached 0 RPM under forward brake, switch to forward drive!
-                    if (car_reverse_active && actual_rpm == 0 && brake_apply_timer >= 4) {
-                        running = 0;
-                        prop_brake_active = 0;
-                        car_reverse_active = 0;
-                        active_brake_duty = 0;
-                        abs_state = 0;
-                    }
-
-                    if (abs_state == 1) {
-                        // ==========================================
-                        // ABS_RELEASE: Brake 100% OPEN (Freilauf) for exactly 4ms!
-                        // ==========================================
-                        prop_brake_duty_cycle = 0;
-                        allOff();
-                        abs_release_timer++;
-
-                        // Exactly 4ms freewheel pulse so wheel unsticks -> immediately resume braking at 32%!
-                        if (abs_release_timer >= 4) {
-                            abs_state = 0;
-                            brake_step = 1; // 32%
-                            active_brake_duty = ((uint32_t)current_brake_amount * 32) / 100;
-                            for (int i = 0; i < 16; i++) {
-                                rpm_history[i] = actual_rpm;
-                            }
-                            history_idx = 0;
-                            brake_apply_timer = 0;
-                            prop_brake_duty_cycle = active_brake_duty;
-                            if (prop_brake_duty_cycle >= 1990) {
-                                fullBrake();
-                            } else {
-                                proportionalBrake();
-                            }
-                        }
-                    } else {
-                        // ==========================================
-                        // ABS_BRAKE: Apply active_brake_duty
-                        // ==========================================
-                        prop_brake_duty_cycle = active_brake_duty;
-                        if (prop_brake_duty_cycle >= 1990) {
-                            fullBrake();
-                        } else if (prop_brake_duty_cycle > 0) {
-                            proportionalBrake();
-                        } else {
-                            allOff();
-                        }
-
-                        // Update 16ms rolling window for deceleration measurement
-                        rpm_history[history_idx] = actual_rpm;
-                        uint8_t oldest_idx = (history_idx + 1) & 0x0F; // modulo 16
-                        uint32_t oldest_rpm = rpm_history[oldest_idx];
-                        history_idx = oldest_idx;
-
-                        // Exactly RPM/ms over 16ms window: (oldest - current) >> 4
-                        int32_t measured_decel = 0;
-                        if (oldest_rpm > actual_rpm) {
-                            measured_decel = (int32_t)(oldest_rpm - actual_rpm) >> 4;
-                        }
-
-                        brake_apply_timer++;
-
-                        // 1. Slip detection: deceleration too fast or lockup -> OPEN BRAKE!
-                        // Evaluated after 4ms
-                        if (brake_apply_timer >= 4) {
-                            if (measured_decel > (int32_t)target_decel || (actual_rpm == 0 && oldest_rpm > 500)) {
-                                abs_state = 1;
-                                abs_min_rpm = actual_rpm;
-                                abs_release_timer = 0;
-                                prop_brake_duty_cycle = 0;
-                                allOff();
-                                running = 1;
-                                old_routine = 0;
-                                enableCompInterrupts();
-                            }
-                        }
-
-                        // 2. Stepping up every 8ms: 32% -> 64% -> 96% -> 100% until blockade is reached!
-                        if (abs_state == 0 && brake_apply_timer >= 8) {
-                            if (brake_step == 1) {
-                                brake_step = 2;
-                                active_brake_duty = ((uint32_t)current_brake_amount * 64) / 100;
-                                brake_apply_timer = 0;
-                            } else if (brake_step == 2) {
-                                brake_step = 3;
-                                active_brake_duty = ((uint32_t)current_brake_amount * 96) / 100;
-                                brake_apply_timer = 0;
-                            } else if (brake_step == 3) {
-                                brake_step = 4;
-                                active_brake_duty = current_brake_amount; // 100%
-                                // Do not reset brake_apply_timer at 100%: keep slip detection active every ms!
-                            }
-                        }
-                    }
-                    last_actual_rpm = actual_rpm;
-                } else if (!prop_brake_active) {
-                    abs_state = 0;
-                    abs_min_rpm = 0;
-                    abs_release_timer = 0;
-                    brake_step = 0;
-                    brake_apply_timer = 0;
-                    active_brake_duty = 0;
-                    for (int i = 0; i < 16; i++) {
-                        rpm_history[i] = 0;
-                    }
                 }
             }
         }
@@ -2632,14 +2477,8 @@ if(zero_crosses < 5){
                 maskPhaseInterrupts();
                 old_routine = 1;
                 if (input < 48) {
-                    if (!eepromBuffer.rc_car_reverse || !prop_brake_active) {
-                        running = 0;
-                        commutation_interval = 5000;
-                    } else {
-                        // During active RC car braking from speed, keep comparator armed for freewheel sensing!
-                        old_routine = 0;
-                        enableCompInterrupts();
-                    }
+                    running = 0;
+                    commutation_interval = 5000;
                 }
                 zero_crosses = 0;
                 zcfoundroutine();
