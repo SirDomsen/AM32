@@ -169,22 +169,22 @@ void abs_periodic_1khz(void)
             g_abs.applied_brake_duty = (uint16_t)next_duty;
         }
 
-        // Online-Lernen der Fahrzeug-Baseline im RAM waehrend stabiler Verzögerungsphasen
+        // Online-Lernen der Fahrzeug-Baseline im RAM waehrend stabiler Verzoegerungsphasen
         if (effective_duty >= ABS_MIN_LEARN_DUTY && g_abs.slip_confidence == 0 && g_abs.delta_t_norm > 0) {
-            // Quotient Q = (delta_t_norm / effective_duty) * 256
-            int32_t instant_q = (int32_t)(((int64_t)g_abs.delta_t_norm << 8) / effective_duty);
+            // Quotient Q = (delta_t_norm / effective_duty) * 1024
+            int32_t instant_q = (int32_t)(((int64_t)g_abs.delta_t_norm << 10) / effective_duty);
 
-            // Plausibilitaets-Check fuer normales Fahrzeugverzögern
-            if (instant_q >= 16 && instant_q <= 512) {
+            // Plausibilitaets-Check fuer normales Fahrzeugverzoegern (typisch 5 bis 50)
+            if (instant_q >= 4 && instant_q <= 128) {
                 // Langsamer IIR-Tiefpassfilter: Q_new = (Q_old * 31 + Q_instant) / 32
                 g_abs.car_alpha_per_duty = (g_abs.car_alpha_per_duty * 31 + instant_q) >> 5;
             }
         }
 
-        // Dynamische Schwelle: (car_alpha_per_duty * effective_duty * 2.25) >> 8
-        // 2.25x = Faktor 9 >> 10 (Multiplikation mit 9, Division durch 1024)
+        // Dynamische Schwelle: (car_alpha_per_duty * effective_duty * 2.25) >> 10
+        // 2.25x = Faktor 9 >> 12 (Multiplikation mit 9, Division durch 4096 = 9/4 * 1/1024)
         {
-            int32_t dyn_thresh = (int32_t)(((int64_t)g_abs.car_alpha_per_duty * effective_duty * 9) >> 10);
+            int32_t dyn_thresh = (int32_t)(((int64_t)g_abs.car_alpha_per_duty * effective_duty * 9) >> 12);
             if (dyn_thresh < ABS_MIN_LOCK_THRESHOLD) {
                 dyn_thresh = ABS_MIN_LOCK_THRESHOLD;
             }
