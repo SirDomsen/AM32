@@ -177,8 +177,8 @@ void abs_periodic_1khz(void)
             // Quotient Q = (delta_t_norm / effective_duty) * 1024
             int32_t instant_q = (int32_t)(((int64_t)g_abs.delta_t_norm << 10) / effective_duty);
 
-            // Plausibilitaets-Check fuer normales Fahrzeugverzoegern (typisch 5 bis 50)
-            if (instant_q >= 4 && instant_q <= 128) {
+            // Plausibilitaets-Check fuer normales Fahrzeugverzoegern (typisch 1 bis 32)
+            if (instant_q >= 1 && instant_q <= 64) {
                 // Langsamer IIR-Tiefpassfilter: Q_new = (Q_old * 31 + Q_instant) / 32
                 g_abs.car_alpha_per_duty = (g_abs.car_alpha_per_duty * 31 + instant_q) >> 5;
             }

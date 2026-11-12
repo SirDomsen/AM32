@@ -30,11 +30,11 @@ typedef enum {
 #define ABS_SLIP_CONFIDENCE_THRESHOLD   2     // Debounce: 2 aufeinanderfolgende Schritte ueber Schwelle
 #define ABS_REAPPLY_FAST_JUMP_PCT       85    // 85% von last_lock_duty bei Stufe A
 #define ABS_PUDDLE_PEAK_PCT             60    // 60% von peak_lock_duty bei extrem steilem Wiederanlauf
-#define ABS_PUDDLE_ACCEL_THRESHOLD      80    // Schwellwert fuer Low-to-High-mu Erkennung (steiler Re-Spin)
+#define ABS_PUDDLE_ACCEL_THRESHOLD      15    // Schwellwert fuer Low-to-High-mu Erkennung (steiler Re-Spin)
 #define ABS_DUMP_TIMEOUT_TICKS          50    // Max. 50 ms im DUMP (Eisschutz-Fallback)
 #define ABS_BUILD_RAMP_STEP             25    // Schrittweite Initial-Rampe pro 1ms Tick
-#define ABS_DEFAULT_CAR_ALPHA_PER_DUTY  24    // Default Fahrzeug-Baseline Q (skaliert mit 1024, normal ~15-25)
-#define ABS_MIN_LOCK_THRESHOLD          30    // Minimaler Rauschfilter fuer lock_threshold
+#define ABS_DEFAULT_CAR_ALPHA_PER_DUTY  2     // Default Fahrzeug-Baseline Q (skaliert mit 1024, ~1-3 fuer Micro Car)
+#define ABS_MIN_LOCK_THRESHOLD          4     // Minimaler Rauschfilter fuer lock_threshold
 #define ABS_MIN_BRAKE_DUTY              1000  // Basis-Duty fuer 0% Bremse in AM32
 #define ABS_MAX_BRAKE_DUTY              2000  // Maximal-Duty fuer 100% Bremse in AM32
 
