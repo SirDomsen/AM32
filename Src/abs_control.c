@@ -127,15 +127,18 @@ void abs_on_commutation_step(uint8_t step, uint32_t step_interval)
     }
     // 2. Wiederanlauf-Erkennung im DUMP-Zustand (Freilauf)
     else if (g_abs.state == ABS_STATE_DUMP) {
-        // Perioden werden kuerzer (delta_T <= 0 bzw. alpha_norm <= 0) -> Strasse treibt Rad an
-        if (alpha_norm < 0) {
-            int32_t spinup_accel = -alpha_norm;
-            if (spinup_accel > g_abs.dump_recovery_accel) {
-                g_abs.dump_recovery_accel = spinup_accel;
+        // Perioden werden kuerzer oder stabilisieren sich (delta_T <= 0 bzw. alpha_norm <= 0)
+        // -> Strasse treibt Rad wieder an / Rad hat Strassengeschwindigkeit erreicht
+        if (alpha_norm <= 0) {
+            if (alpha_norm < 0) {
+                int32_t spinup_accel = -alpha_norm;
+                if (spinup_accel > g_abs.dump_recovery_accel) {
+                    g_abs.dump_recovery_accel = spinup_accel;
+                }
             }
             g_abs.reapply_spinup_steps++;
 
-            // Rad hat sich gefangen (mindestens 2 aufeinanderfolgende Beschleunigungsschritte)
+            // Rad hat sich gefangen (mindestens 2 aufeinanderfolgende Schritte ohne Verzoegerung)
             if (g_abs.reapply_spinup_steps >= 2) {
                 g_abs.state = ABS_STATE_HOLD; // Wechsel zu Stufe A Fast-Jump
             }
@@ -224,7 +227,7 @@ void abs_periodic_1khz(void)
         }
 
         g_abs.applied_brake_duty = jump_duty;
-        g_abs.reapply_ramp_step = 2; // Initial flache Schrittweite (2 Duty-Punkte/ms)
+        g_abs.reapply_ramp_step = 6; // Initial tastende Schrittweite (6 Duty-Punkte/ms)
         g_abs.reapply_ramp_timer = 0;
         g_abs.state = ABS_STATE_REAPPLY;
         break;
@@ -233,10 +236,10 @@ void abs_periodic_1khz(void)
     case ABS_STATE_REAPPLY: {
         // Stufe B: Progressive Such-Rampe Richtung target_brake_duty
         g_abs.reapply_ramp_timer++;
-        // Alle 4 ms ohne Schlupf verdoppeln wir die Schrittweite (2 -> 4 -> 8 -> 16 -> 32)
-        if (g_abs.reapply_ramp_timer >= 4) {
+        // Alle 2 ms ohne Schlupf verdoppeln wir die Schrittweite (6 -> 12 -> 24 -> 48 -> 64)
+        if (g_abs.reapply_ramp_timer >= 2) {
             g_abs.reapply_ramp_timer = 0;
-            if (g_abs.reapply_ramp_step < 32) {
+            if (g_abs.reapply_ramp_step < 64) {
                 g_abs.reapply_ramp_step <<= 1;
             }
         }
